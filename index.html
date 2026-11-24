@@ -25,10 +25,30 @@ button{font:inherit;color:inherit;}
 /* ---------- Escena: una sola imagen y una cámara virtual ---------- */
 #stage{position:fixed;inset:0;overflow:hidden;background:var(--bg);touch-action:none;cursor:grab;}
 #stage.grab{cursor:grabbing;}
-#world{position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform;}
+/* Sin will-change: así el navegador vuelve a rasterizar la foto a la escala del zoom y no la estira */
+#world{position:absolute;left:0;top:0;transform-origin:0 0;}
+body.flying #world,#stage.grab #world{will-change:transform;}
 #world img{position:absolute;inset:0;width:100%;height:100%;display:block;-webkit-user-drag:none;}
 #world #hi{opacity:0;transition:opacity 1.2s;}
 #world #hi.on{opacity:1;}
+/* Mosaicos de alta resolución (upscale ×2) sobre la zona de la planta */
+#world .tile{position:absolute;width:50%;height:50%;opacity:0;transition:opacity .9s;
+  -webkit-mask-image:linear-gradient(to bottom,transparent,#000 3%,#000 97%,transparent);
+          mask-image:linear-gradient(to bottom,transparent,#000 3%,#000 97%,transparent);}
+#world .tile.on{opacity:1;}
+/* Aire caliente sobre chimeneas y antorcha */
+#haze div{position:absolute;filter:url(#heat);background-repeat:no-repeat;
+  -webkit-mask-image:radial-gradient(closest-side,#000 35%,transparent);mask-image:radial-gradient(closest-side,#000 35%,transparent);}
+/* Sombras de nubes que cruzan la planta */
+#clouds{position:absolute;inset:0;overflow:hidden;pointer-events:none;mix-blend-mode:multiply;opacity:.55;}
+#clouds i{position:absolute;border-radius:50%;background:radial-gradient(closest-side,rgba(40,48,70,.55),rgba(40,48,70,.28) 55%,transparent);
+  animation:cloud linear infinite;}
+#clouds i:nth-child(1){width:46%;height:30%;top:42%;animation-duration:95s;animation-delay:-20s;}
+#clouds i:nth-child(2){width:34%;height:22%;top:62%;animation-duration:120s;animation-delay:-75s;}
+#clouds i:nth-child(3){width:52%;height:26%;top:20%;animation-duration:140s;animation-delay:-40s;}
+#clouds i:nth-child(4){width:28%;height:18%;top:78%;animation-duration:85s;animation-delay:-60s;}
+@keyframes cloud{from{left:-55%;}to{left:105%;}}
+#fx{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;}
 #pins{position:absolute;inset:0;pointer-events:none;}
 .pin{position:absolute;left:0;top:0;will-change:transform;}
 .pin > *{pointer-events:auto;}
@@ -285,8 +305,18 @@ body.zone .aerial-only{display:none !important;}
 </style>
 </head>
 <body class="aerial">
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><filter id="heat" x="-5%" y="-5%" width="110%" height="110%">
+  <feTurbulence type="fractalNoise" baseFrequency="0.018 0.11" numOctaves="2" seed="4" result="n">
+    <animate attributeName="baseFrequency" dur="2.4s" values="0.018 0.11;0.024 0.14;0.018 0.11" repeatCount="indefinite"/></feTurbulence>
+  <feDisplacementMap in="SourceGraphic" in2="n" scale="9" xChannelSelector="R" yChannelSelector="G"/></filter></svg>
 <div id="stage" aria-label="Vista aérea de la planta de tratamiento de gas">
-  <div id="world"><img id="lo" src="img/planta/aerea-sm.jpg" alt="Vista aérea de la planta de tratamiento de gas y su entorno" draggable="false"><img id="hi" alt="" draggable="false"></div>
+  <div id="world"><img id="lo" src="img/planta/aerea-sm.jpg" alt="Vista aérea de la planta de tratamiento de gas y su entorno" draggable="false"><img id="hi" alt="" draggable="false">
+    <img class="tile" data-src="img/planta/tile-L.jpg" style="left:0;top:25%" alt="" draggable="false">
+    <img class="tile" data-src="img/planta/tile-R.jpg" style="left:50%;top:25%" alt="" draggable="false">
+    <div id="haze"></div>
+    <div id="clouds"><i></i><i></i><i></i><i></i></div>
+  </div>
+  <canvas id="fx"></canvas>
   <div id="pins"></div>
 </div>
 <div id="vignette"></div>
@@ -581,7 +611,15 @@ const $=s=>document.querySelector(s);
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const lerp=(a,b,t)=>a+(b-a)*t;
 const RM=matchMedia('(prefers-reduced-motion: reduce)').matches;
-const AR=3840/2160, ZMAX=4.2;
+const AR=3840/2160;
+/* Zoom máximo según la resolución real disponible: nunca se amplía más allá de los píxeles de la foto */
+let tilesReady=false, zB=2.3, zT=2.3;
+function limits(){
+  const d=Math.min(devicePixelRatio||1,1.5);
+  zB=Math.max(1.5,3840/fw/d*1.15);
+  zT=tilesReady?Math.min(4.6,8192/fw/d*1.15):zB;
+}
+const zMaxAt=(x,y)=>(y>29&&y<71)?zT:zB;
 const HOME={x:50,y:52,z:1.06};
 const stage=$('#stage'), world=$('#world'), pinsEl=$('#pins'), card=$('#card'), zpanel=$('#zpanel');
 let vw=0,vh=0,fw=0,fh=0;
@@ -595,6 +633,7 @@ function layout(){
   vw=innerWidth; vh=innerHeight;
   if(vw/vh>AR){fw=vw;fh=vw/AR;} else {fh=vh;fw=vh*AR;}
   world.style.width=fw+'px'; world.style.height=fh+'px';
+  limits(); sizeFx(); placeHaze();
 }
 /* Acercamiento mínimo para que, con el giro aplicado, nunca se vean los bordes de la foto */
 function zMin(r){
@@ -602,10 +641,11 @@ function zMin(r){
   return Math.max((vw*c+vh*s)/fw,(vw*s+vh*c)/fh)*1.002;
 }
 function fit(c){
-  const z=clamp(c.z,zMin(c.r||0),ZMAX);
-  const a=Math.abs(c.r||0)*Math.PI/180, co=Math.cos(a), si=Math.sin(a);
-  const hx=(vw/2*co+vh/2*si)/z/fw*100, hy=(vw/2*si+vh/2*co)/z/fh*100;
-  return {x:clamp(c.x,hx,100-hx), y:clamp(c.y,hy,100-hy), z, r:c.r||0};
+  const p=c.p||0, zm=zMin(c.r||0)*(1+Math.abs(p)*.035);
+  const z=clamp(c.z,zm,Math.max(zm,zMaxAt(c.x,c.y)));
+  const a=Math.abs(c.r||0)*Math.PI/180, co=Math.cos(a), si=Math.sin(a), m=1+Math.abs(p)*.03;
+  const hx=(vw/2*co+vh/2*si)*m/z/fw*100, hy=(vw/2*si+vh/2*co)*m/z/fh*100;
+  return {x:clamp(c.x,hx,100-hx), y:clamp(c.y,hy,100-hy), z, r:c.r||0, p};
 }
 const ease=t=>t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
 const easeSoft=t=>.5-.5*Math.cos(Math.PI*t);
@@ -623,7 +663,7 @@ function fly(to,{dur,hop,bank=true,curve=ease}={}){
   if(flight) flight.done(false);
   if(RM) dur=1;
   return new Promise(res=>{
-    flight={from,to,dur,hop,bank:bank?side*2.6:0,curve,t0:performance.now(),
+    flight={from,to,dur,hop,bank:bank?side*2.6:0,pitch:bank?clamp(dist*4,0,2.4):0,curve,t0:performance.now(),
       done:(ok)=>{flight=null;res(ok);}};
     document.body.classList.add('flying');
   });
@@ -631,13 +671,17 @@ function fly(to,{dur,hop,bank=true,curve=ease}={}){
 function stepFlight(now){
   const f=flight, t=clamp((now-f.t0)/f.dur,0,1), e=f.curve(t), arc=Math.sin(Math.PI*t);
   const lz=lerp(Math.log(f.from.z),Math.log(f.to.z),easeSoft(t));
-  base={x:lerp(f.from.x,f.to.x,e), y:lerp(f.from.y,f.to.y,e), z:Math.exp(lz)*(1-f.hop*arc), r:-f.bank*arc};
+  base={x:lerp(f.from.x,f.to.x,e), y:lerp(f.from.y,f.to.y,e), z:Math.exp(lz)*(1-f.hop*arc), r:-f.bank*arc, p:f.pitch*arc};
   if(t>=1){ base={...f.to}; f.done(true); if(!flight) document.body.classList.remove('flying'); }
 }
 
 /* Proyección de un punto de la foto (%) a pantalla */
 let M=new DOMMatrix();
-function project(x,y){ const p=M.transformPoint(new DOMPoint(x/100*fw,y/100*fh)); return [p.x,p.y]; }
+const PERSP=new DOMMatrix([1,0,0,0, 0,1,0,0, 0,0,1,-1/1700, 0,0,0,1]);
+function project(x,y){
+  const X=x/100*fw, Y=y/100*fh, w=M.m14*X+M.m24*Y+M.m44;
+  return [(M.m11*X+M.m21*Y+M.m41)/w,(M.m12*X+M.m22*Y+M.m42)/w];
+}
 
 const PINS=[];
 function buildPins(){
@@ -691,9 +735,10 @@ function frame(now){
   /* Flotación de dron estacionario: deriva suave y pequeño alabeo */
   const t=(now-T0)/1000, A=RM?0:hoverAmp;
   cam=fit({x:base.x+Math.sin(t*.31)*.28*A/base.z, y:base.y+Math.cos(t*.23)*.2*A/base.z,
-           z:base.z*(1+Math.sin(t*.19)*.008*A), r:base.r+Math.sin(t*.27)*.22*A});
-  M=new DOMMatrix().translate(vw/2,vh/2).rotate(cam.r).scale(cam.z).translate(-cam.x/100*fw,-cam.y/100*fh);
+           z:base.z, r:(base.r||0)+Math.sin(t*.27)*.22*A, p:base.p||0});
+  M=new DOMMatrix().translate(vw/2,vh/2).multiply(PERSP).rotateAxisAngle(1,0,0,cam.p).rotate(cam.r).scale(cam.z).translate(-cam.x/100*fw,-cam.y/100*fh);
   world.style.transform=M.toString();
+  drawFx(now);
   for(const p of PINS){
     const [x,y]=project(p.x,p.y);
     const off=x<-260||x>vw+260||y<-160||y>vh+160;
@@ -706,6 +751,124 @@ function frame(now){
   requestAnimationFrame(frame);
 }
 const camFor=z=>({x:z.cam.x,y:z.cam.y,z:z.cam.z});
+
+/* ============ Vida en la escena: llama, vapor, gases, ventiladores, balizas, polvo ============ */
+/* Todas las posiciones están medidas sobre la foto (% del ancho y del alto). Viento hacia la derecha. */
+const fx=$('#fx'), ctx=fx.getContext('2d');
+let DPR=1;
+function sizeFx(){ DPR=Math.min(devicePixelRatio||1,2); fx.width=Math.round(vw*DPR); fx.height=Math.round(vh*DPR); }
+function sprite(r,g,b,soft=.45){
+  const c=document.createElement('canvas'); c.width=c.height=64; const x=c.getContext('2d');
+  const gr=x.createRadialGradient(32,32,0,32,32,32);
+  gr.addColorStop(0,`rgba(${r},${g},${b},1)`); gr.addColorStop(soft,`rgba(${r},${g},${b},.5)`); gr.addColorStop(1,`rgba(${r},${g},${b},0)`);
+  x.fillStyle=gr; x.fillRect(0,0,64,64); return c;
+}
+const SPR={fire:sprite(255,150,40), core:sprite(255,236,190,.3), smoke:sprite(92,86,80,.5), steam:sprite(246,246,248,.5),
+  heat:sprite(214,204,192,.55), dust:sprite(255,238,205,.2), red:sprite(255,46,30,.25), white:sprite(255,255,255,.25)};
+const FLARE={x:92.25,y:21.7};
+/* Emisores: tipo, posición, partículas por segundo, vida (s), velocidad (%/s), tamaño inicial→final (% del ancho), opacidad */
+const EMIT=[
+  {k:'fire', x:FLARE.x,y:FLARE.y, rate:90, life:[.35,.8], vy:-2.8, vx:1, s:[.42,.16], a:.85, blend:'lighter', jx:.14},
+  {k:'smoke',x:FLARE.x+.3,y:FLARE.y-1.6, rate:9, life:[3.5,6], vy:-.55, vx:.8, s:[.4,2.6], a:.22, jx:.15},
+  {k:'steam',x:30.94,y:31.9, rate:12, life:[4,6.5], vy:-.45, vx:.45, s:[.3,2.4], a:.45, jx:.08},
+  {k:'steam',x:43.6,y:43.2, rate:6, life:[3,4.5], vy:-.38, vx:.38, s:[.2,1.4], a:.34, jx:.05},
+  {k:'heat', x:62.66,y:40.3, rate:6, life:[2,3], vy:-.6, vx:.45, s:[.45,1.6], a:.09, jx:.12},
+  {k:'heat', x:70.5,y:40.2, rate:6, life:[2,3], vy:-.6, vx:.45, s:[.45,1.6], a:.09, jx:.12},
+  {k:'heat', x:78.02,y:40.2, rate:6, life:[2,3], vy:-.6, vx:.45, s:[.45,1.6], a:.09, jx:.12},
+];
+const PARTS=[];
+/* Ventiladores de los aeroenfriadores del punto de rocío (centros medidos sobre la foto) */
+const FANS=[[48.41,41.09],[48.71,41.85],[49.04,42.55],[49.3,43.19],[49.62,43.94],[49.92,44.58],[50.14,45.37],[50.34,46.06],
+  [49.84,41.09],[50.14,41.81],[50.47,42.43],[50.73,43.13],[51.05,43.82],[51.38,44.51],[51.64,45.21],[52.03,46.02],
+  [52.81,40.93],[53.07,41.67],[53.4,42.36],[53.66,43.01],[53.98,43.66],[54.31,44.33],[54.57,44.98],[55.29,45.9],
+  [54.24,40.93],[54.57,41.62],[54.9,42.27],[55.22,42.96],[55.55,43.59],[55.87,44.28],[56.2,44.91],[56.72,45.83]]
+  .map(([x,y],i)=>({x,y,ph:i*1.7,sp:9+((i*7)%5)}));
+/* Balizas rojas de obstrucción en las estructuras altas */
+const BEACONS=[[92.05,22.4],[23.9,24.2],[30.94,32.2],[39.7,31.8],[53.6,21.8],[62.66,40.1],[70.5,40],[78.02,40]].map(([x,y],i)=>({x,y,ph:i*.37}));
+/* Polvo en suspensión iluminado por el sol */
+const DUST=Array.from({length:70},()=>({x:Math.random()*100,y:28+Math.random()*60,ph:Math.random()*6.3,s:.04+Math.random()*.07,v:.12+Math.random()*.25}));
+let lastFx=0;
+const rnd=(a,b)=>a+Math.random()*(b-a);
+function drawFx(now){
+  const dt=Math.min(.05,(now-(lastFx||now))/1000); lastFx=now;
+  const t=now/1000, k=fw*cam.z/100*DPR; /* % del ancho → píxeles de pantalla */
+  ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0,0,fx.width,fx.height);
+  if(RM) return;
+  /* Emitir y avanzar partículas */
+  for(const e of EMIT){
+    e.acc=(e.acc||0)+e.rate*dt;
+    while(e.acc>=1){ e.acc--; PARTS.push({e,x:e.x+rnd(-e.jx,e.jx),y:e.y+rnd(-e.jx,e.jx)*.6,age:0,life:rnd(...e.life),
+      vx:e.vx*rnd(.7,1.3),vy:e.vy*rnd(.75,1.25),rot:Math.random()*6.3}); }
+  }
+  for(let i=PARTS.length-1;i>=0;i--){
+    const p=PARTS[i]; p.age+=dt; if(p.age>=p.life){ PARTS.splice(i,1); continue; }
+    const gust=1+Math.sin(t*.7+p.rot)*.25;
+    p.x+=p.vx*gust*dt*(fh/fw); p.y+=p.vy*dt; p.vy*=p.e.k==='fire'?.985:.995;
+  }
+  /* Resplandor de la antorcha (parpadeo) */
+  const [fxp,fyp]=project(FLARE.x,FLARE.y-.8);
+  const fl=.75+Math.sin(t*13)*.08+Math.sin(t*7.3)*.1+Math.random()*.07;
+  ctx.globalCompositeOperation='lighter';
+  ctx.globalAlpha=.35*fl; const gs=2.6*k; ctx.drawImage(SPR.fire,fxp*DPR-gs/2,fyp*DPR-gs/2,gs,gs);
+  ctx.globalAlpha=.5*fl; const cs=.9*k; ctx.drawImage(SPR.core,fxp*DPR-cs/2,fyp*DPR-cs/2,cs,cs);
+  /* Partículas (fuego aditivo, humo y vapor normal) */
+  for(const p of PARTS){
+    const e=p.e, u=p.age/p.life, s=lerp(e.s[0],e.s[1],u)*k;
+    if(s<.6) continue;
+    const [sx,sy]=project(p.x,p.y);
+    if(sx<-s||sy<-s||sx>vw+s||sy>vh+s) continue;
+    ctx.globalCompositeOperation=e.blend||'source-over';
+    const a=e.k==='fire'?e.a*(1-u)*(u<.15?u/.15:1):e.a*Math.sin(Math.PI*Math.min(1,u*1.15))*(1-u*.4);
+    ctx.globalAlpha=a;
+    const img=e.k==='fire'?(u<.35?SPR.core:SPR.fire):SPR[e.k];
+    ctx.drawImage(img,sx*DPR-s/2,sy*DPR-s/2,s,s);
+  }
+  ctx.globalCompositeOperation='source-over';
+  /* Ventiladores girando (sólo cuando se ven de cerca) */
+  const fr=.5*k;
+  if(fr>9){
+    const rr=cam.r*Math.PI/180;
+    for(const f of FANS){
+      const [sx,sy]=project(f.x,f.y); if(sx<-fr||sx>vw+fr||sy<-fr||sy>vh+fr) continue;
+      ctx.setTransform(DPR,0,0,DPR,0,0); ctx.translate(sx,sy); ctx.rotate(rr); ctx.scale(1,.5);
+      const R=fr/DPR, ang=t*f.sp+f.ph;
+      ctx.globalAlpha=.32; ctx.fillStyle='#1b1d20';
+      ctx.beginPath(); ctx.arc(0,0,R*.9,0,6.283); ctx.fill();
+      ctx.rotate(ang); ctx.globalAlpha=.55; ctx.fillStyle='#c9ccd0';
+      for(let b=0;b<5;b++){ ctx.rotate(1.2566); ctx.beginPath(); ctx.moveTo(0,0); ctx.arc(0,0,R*.86,-.16,.16); ctx.closePath(); ctx.fill(); }
+      ctx.globalAlpha=.35; ctx.beginPath(); ctx.arc(0,0,R*.86,0,6.283); ctx.fillStyle='rgba(200,204,208,.35)'; ctx.fill();
+      ctx.globalAlpha=.9; ctx.fillStyle='#3a3d42'; ctx.beginPath(); ctx.arc(0,0,R*.13,0,6.283); ctx.fill();
+    }
+    ctx.setTransform(1,0,0,1,0,0);
+  }
+  /* Balizas */
+  ctx.globalCompositeOperation='lighter';
+  for(const b of BEACONS){
+    const on=((t*.8+b.ph)%1)<.42; if(!on) continue;
+    const [sx,sy]=project(b.x,b.y), s=Math.max(10,.55*k);
+    ctx.globalAlpha=.9; ctx.drawImage(SPR.red,sx*DPR-s/2,sy*DPR-s/2,s,s);
+    ctx.globalAlpha=.8; const w=s*.28; ctx.drawImage(SPR.white,sx*DPR-w/2,sy*DPR-w/2,w,w);
+  }
+  /* Polvo */
+  for(const d of DUST){
+    d.x+=d.v*dt; if(d.x>100) d.x=0;
+    const [sx,sy]=project(d.x,d.y+Math.sin(t*.6+d.ph)*.4); if(sx<0||sx>vw||sy<0||sy>vh) continue;
+    const s=Math.max(1.5*DPR,d.s*k); ctx.globalAlpha=.22+.2*Math.sin(t*1.3+d.ph);
+    ctx.drawImage(SPR.dust,sx*DPR-s/2,sy*DPR-s/2,s,s);
+  }
+  ctx.globalAlpha=1; ctx.globalCompositeOperation='source-over';
+}
+/* Aire caliente (refracción) sobre las chimeneas de las turbinas y la antorcha */
+const HAZE=[[61.06,35.6,3.2,5],[68.9,35.5,3.2,5],[76.42,35.5,3.2,5],[90.4,12.5,4.4,9]];
+const hazeEl=$('#haze');
+HAZE.forEach(()=>hazeEl.appendChild(document.createElement('div')));
+function placeHaze(){
+  [...hazeEl.children].forEach((d,i)=>{
+    const [x,y,w,h]=HAZE[i];
+    d.style.cssText=`left:${x}%;top:${y}%;width:${w}%;height:${h}%;background-image:url(img/planta/aerea.jpg);`+
+      `background-size:${fw}px ${fh}px;background-position:${-x/100*fw}px ${-y/100*fh}px;`;
+  });
+}
 
 /* ============ Navegación ============ */
 async function goZone(id,opts){
@@ -811,7 +974,7 @@ function openAsset(a){
 }
 /* El dron se acerca al equipo y lo deja a un costado de la ficha */
 function focusAsset(a){
-  const narrow=vw<760, z=Math.min(ZBY[a.st].zf||ZMAX,Math.max(ZBY[a.st].cam.z*1.45,3.4));
+  const narrow=vw<760, z=Math.min(zMaxAt(a.x,a.y),Math.max(ZBY[a.st].cam.z*1.45,3.4));
   const sx=narrow?.5:.36, sy=narrow?.24:.46;
   return fly({x:a.x+(.5-sx)*vw/(fw*z)*100, y:a.y+(.5-sy)*vh/(fh*z)*100, z},{dur:1500,hop:0});
 }
@@ -877,7 +1040,7 @@ addEventListener('pointerup',endDrag); addEventListener('pointercancel',endDrag)
 stage.addEventListener('wheel',e=>{
   e.preventDefault(); stopTour();
   if(flight){ flight.done(false); document.body.classList.remove('flying'); }
-  const nz=clamp(base.z*Math.exp(-e.deltaY*.0015),zMin(0),ZMAX), k=1/base.z-1/nz;
+  const nz=clamp(base.z*Math.exp(-e.deltaY*.0015),zMin(0),Math.max(zMin(0),zMaxAt(base.x,base.y))), k=1/base.z-1/nz;
   base=fit({x:base.x+(e.clientX-vw/2)/fw*100*k, y:base.y+(e.clientY-vh/2)/fh*100*k, z:nz, r:0});
 },{passive:false});
 const mini=$('#mini');
@@ -900,7 +1063,14 @@ async function boot(){
   busy=true;
   layout(); buildPins(); buildStatic();
   await $('#lo').decode().catch(()=>{});
-  const hi=$('#hi'); hi.onload=()=>hi.classList.add('on'); hi.src='img/planta/aerea.jpg';
+  const hi=$('#hi');
+  hi.onload=()=>{
+    hi.classList.add('on');
+    /* Después de la foto base, los mosaicos de alta resolución */
+    const tiles=[...document.querySelectorAll('#world .tile')]; let n=0;
+    tiles.forEach(t=>{ t.onload=()=>{ t.classList.add('on'); if(++n===tiles.length){ tilesReady=true; limits(); } }; t.src=t.dataset.src; });
+  };
+  hi.src='img/planta/aerea.jpg';
   base=fit({x:50,y:14,z:1.5,r:0}); cam={...base};
   requestAnimationFrame(frame);
   $('#intro').classList.add('gone');

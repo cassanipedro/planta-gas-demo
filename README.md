@@ -35,6 +35,13 @@ y entrá a http://localhost:8765.
   - arrastrar para moverse y rueda para hacer zoom;
   - ← → para pasar de área y Esc para volver;
   - minimapa arriba a la derecha.
+- **Escena viva**:
+  - llama de antorcha animada con humo;
+  - vapor en la regeneradora de aminas;
+  - gases calientes y refracción sobre las chimeneas de las turbinas;
+  - ventiladores girando;
+  - sombras de nubes, balizas y polvo en suspensión.
+- **Alta resolución**: la zona de la planta usa mosaicos con upscale ×2. El zoom se limita a la resolución real de la foto para que no se pixele.
 - Se adapta a celular.
 
 ## Archivos
@@ -44,7 +51,7 @@ y entrá a http://localhost:8765.
 | `index.html` | Versión actual: planta realista, cámara continua tipo dron |
 | `version-maqueta.html` | Versión anterior: estilo maqueta, una imagen por área |
 | `version-petroleo.html` | Primera versión: yacimiento de petróleo |
-| `img/planta/` | Foto aérea 4K y miniatura |
+| `img/planta/` | Foto aérea 4K, miniatura y mosaicos de alta resolución |
 | `img/gas/`, `img/v1-petroleo/` | Imágenes de las versiones anteriores |
 
 Todo el contenido es genérico: nombres, TAGs y valores son ficticios.
