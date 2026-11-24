@@ -1,0 +1,915 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Planta de Gas Aguada Norte</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@500&display=swap">
+<link rel="preload" as="image" href="img/planta/aerea-sm.jpg">
+<style>
+:root{
+  --bg:#0c0b0a; --fg:#f4f1ea; --muted:#aaa497;
+  --glass:rgba(14,12,11,.6); --glass-strong:rgba(14,12,11,.8); --glass-br:rgba(255,255,255,.15);
+  --accent:#ff9044; --ok:#3ddc97; --warn:#ffc24b; --bad:#ff6b5e; --maint:#5fb4ff; --trend:#9fd4ff;
+  --font-h:'Space Grotesk',system-ui,sans-serif; --font-b:'Inter',system-ui,sans-serif;
+  --font-m:'JetBrains Mono',ui-monospace,monospace;
+  --ease:cubic-bezier(.6,0,.2,1);
+  color-scheme:dark;
+}
+html,body{height:100%;margin:0;}
+body{background:var(--bg);color:var(--fg);font-family:var(--font-b);overflow:hidden;
+  -webkit-font-smoothing:antialiased;-webkit-user-select:none;user-select:none;}
+button{font:inherit;color:inherit;}
+
+/* ---------- Escena: una sola imagen y una cámara virtual ---------- */
+#stage{position:fixed;inset:0;overflow:hidden;background:var(--bg);touch-action:none;cursor:grab;}
+#stage.grab{cursor:grabbing;}
+#world{position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform;}
+#world img{position:absolute;inset:0;width:100%;height:100%;display:block;-webkit-user-drag:none;}
+#world #hi{opacity:0;transition:opacity 1.2s;}
+#world #hi.on{opacity:1;}
+#pins{position:absolute;inset:0;pointer-events:none;}
+.pin{position:absolute;left:0;top:0;will-change:transform;}
+.pin > *{pointer-events:auto;}
+.pin.off{visibility:hidden;}
+.pin.off > *{pointer-events:none;}
+
+/* Pines de área */
+.zpin{position:absolute;left:0;top:0;transform:translate(-50%,-100%);display:flex;flex-direction:column;align-items:center;
+  background:none;border:0;padding:0;cursor:pointer;transition:opacity .45s;}
+.zpin .lab{display:flex;align-items:center;gap:7px;background:var(--glass);border:1px solid var(--glass-br);
+  border-radius:999px;padding:7px 13px;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  font-family:var(--font-h);font-weight:600;font-size:12.5px;white-space:nowrap;
+  transition:border-color .2s,transform .25s;box-shadow:0 6px 24px rgba(0,0,0,.35);}
+.zpin .lab small{font-family:var(--font-b);font-weight:400;font-size:10.5px;color:#d6cfc2;font-variant-numeric:tabular-nums;}
+.zpin .lab small b{font-weight:600;color:#fff;}
+.zpin .stem{width:1px;height:30px;background:linear-gradient(rgba(255,255,255,.85),rgba(255,255,255,.15));}
+.zpin .pt{width:11px;height:11px;border-radius:50%;background:var(--hsc);margin-bottom:-5.5px;
+  box-shadow:0 0 0 3px rgba(0,0,0,.28),0 0 16px 2px var(--hsc);position:relative;}
+.zpin .pt::after{content:"";position:absolute;inset:-6px;border-radius:50%;border:1.5px solid var(--hsc);
+  animation:pulse 2.6s ease-out infinite;}
+.zpin.b{transform:translate(-50%,0);flex-direction:column-reverse;}
+.zpin.b .pt{margin:-5.5px 0 0;}
+.zpin.b .stem{background:linear-gradient(rgba(255,255,255,.15),rgba(255,255,255,.85));}
+.zpin:hover .lab,.zpin.hl .lab{border-color:var(--accent);transform:translateY(-3px);}
+.zpin.r .lab{transform:translateX(-36%);}
+.zpin.r:hover .lab,.zpin.r.hl .lab{transform:translate(-36%,-3px);}
+.zpin:focus-visible{outline:none;}
+.zpin:focus-visible .lab{outline:2px solid var(--accent);outline-offset:2px;}
+body.zone .zpin,body.flying .zpin{opacity:0;pointer-events:none;}
+
+/* Hotspots de equipos */
+.hs{position:absolute;left:0;top:0;width:42px;height:42px;margin:-21px 0 0 -21px;border-radius:50%;border:0;
+  background:transparent;cursor:pointer;padding:0;opacity:0;pointer-events:none;transition:opacity .45s;}
+.hs.on{opacity:1;pointer-events:auto;}
+body.flying .hs.on{opacity:0;pointer-events:none;transition:opacity .2s;}
+.hs i{position:absolute;inset:13px;border-radius:50%;background:var(--hsc);
+  box-shadow:0 0 0 3px rgba(0,0,0,.3),0 0 16px 4px var(--hsc);transition:inset .2s;}
+.hs::before{content:"";position:absolute;inset:5px;border-radius:50%;border:1.5px solid var(--hsc);
+  animation:pulse 2.4s ease-out infinite;}
+.hs span{position:absolute;left:50%;bottom:calc(100% + 4px);transform:translateX(-50%);
+  background:var(--glass-strong);border:1px solid var(--glass-br);border-radius:8px;padding:5px 10px;
+  font-size:11.5px;white-space:nowrap;opacity:0;transition:opacity .2s;pointer-events:none;
+  backdrop-filter:blur(10px);}
+.hs:hover span,.hs.hl span,.hs.sel span,.hs:focus-visible span{opacity:1;}
+.hs:hover i,.hs.hl i,.hs.sel i{inset:10px;}
+.hs.sel::before{border-width:2px;animation-duration:1.4s;}
+.hs:focus-visible{outline:none;}
+@keyframes pulse{0%{transform:scale(.6);opacity:.9;}70%{transform:scale(1.6);opacity:0;}100%{opacity:0;}}
+
+/* ---------- Capas de cine ---------- */
+#vignette{position:fixed;inset:0;pointer-events:none;
+  background:radial-gradient(ellipse 78% 72% at 50% 48%,transparent 58%,rgba(6,5,4,.5) 100%),
+             linear-gradient(to bottom,rgba(6,5,4,.42),transparent 18%,transparent 74%,rgba(6,5,4,.55));}
+#grain{position:fixed;inset:-50%;pointer-events:none;opacity:.05;mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  animation:grain 1s steps(5) infinite;}
+@keyframes grain{0%{transform:translate(0,0);}20%{transform:translate(-3%,2%);}40%{transform:translate(2%,-3%);}
+  60%{transform:translate(-2%,-1%);}80%{transform:translate(3%,3%);}100%{transform:translate(0,0);}}
+#bars::before,#bars::after{content:"";position:fixed;left:0;right:0;height:0;background:#000;z-index:3;
+  pointer-events:none;transition:height .8s var(--ease);}
+#bars::before{top:0;} #bars::after{bottom:0;}
+body.drone #bars::before,body.drone #bars::after{height:5.5vh;}
+
+/* ---------- HUD de dron ---------- */
+#drone{position:fixed;inset:0;pointer-events:none;z-index:4;opacity:0;transition:opacity .8s;font-family:var(--font-m);
+  font-size:11.5px;letter-spacing:.04em;color:rgba(255,255,255,.92);text-shadow:0 1px 4px rgba(0,0,0,.8);}
+body.drone #drone{opacity:1;}
+#drone .fr{position:absolute;inset:calc(5.5vh + 18px) 22px;}
+#drone .fr i{position:absolute;width:26px;height:26px;border:2px solid rgba(255,255,255,.75);}
+#drone .fr i:nth-child(1){left:0;top:0;border-right:0;border-bottom:0;}
+#drone .fr i:nth-child(2){right:0;top:0;border-left:0;border-bottom:0;}
+#drone .fr i:nth-child(3){left:0;bottom:0;border-right:0;border-top:0;}
+#drone .fr i:nth-child(4){right:0;bottom:0;border-left:0;border-top:0;}
+#drone .cross{position:absolute;left:50%;top:50%;width:46px;height:46px;margin:-23px 0 0 -23px;}
+#drone .cross::before,#drone .cross::after{content:"";position:absolute;background:rgba(255,255,255,.55);}
+#drone .cross::before{left:0;right:0;top:50%;height:1px;}
+#drone .cross::after{top:0;bottom:0;left:50%;width:1px;}
+#drone .rec{position:absolute;left:58px;top:calc(5.5vh + 26px);display:flex;align-items:center;gap:8px;}
+#drone .rec b{width:9px;height:9px;border-radius:50%;background:#ff3b30;animation:blink 1.2s steps(2) infinite;}
+#drone .tl{position:absolute;right:58px;top:calc(5.5vh + 26px);text-align:right;}
+#drone .tel{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(5.5vh + 24px);display:flex;gap:22px;white-space:nowrap;}
+#drone .tel span em{font-style:normal;color:rgba(255,255,255,.55);margin-right:6px;}
+#drone .tel span b{font-weight:500;font-variant-numeric:tabular-nums;}
+#drone .now{position:absolute;left:58px;bottom:calc(5.5vh + 24px);font-family:var(--font-h);font-size:15px;font-weight:600;
+  letter-spacing:.02em;max-width:40vw;}
+#drone .now small{display:block;font-family:var(--font-m);font-size:10.5px;font-weight:500;color:rgba(255,255,255,.65);margin-bottom:3px;}
+
+/* ---------- Intro ---------- */
+#intro{position:fixed;inset:0;z-index:20;background:var(--bg);display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:14px;transition:opacity 1.2s .1s;text-align:center;padding:0 24px;}
+#intro.gone{opacity:0;pointer-events:none;}
+#intro .t{font-family:var(--font-h);font-weight:700;font-size:22px;letter-spacing:.4px;}
+#intro .bar{width:160px;height:2px;background:rgba(255,255,255,.12);border-radius:2px;overflow:hidden;}
+#intro .bar i{display:block;height:100%;width:40%;background:var(--accent);animation:load 1.1s ease-in-out infinite;}
+@keyframes load{from{transform:translateX(-100%);}to{transform:translateX(250%);}}
+#intro small{color:var(--muted);font-size:12px;}
+
+/* ---------- HUD ---------- */
+#hud{position:fixed;inset:0;pointer-events:none;z-index:5;opacity:0;transition:opacity 1.2s;}
+body.ready #hud{opacity:1;}
+#hud > *{pointer-events:auto;}
+body.drone #topleft,body.drone #topcenter,body.drone #summary,body.drone #mini{opacity:0;pointer-events:none;}
+.pill{display:inline-flex;align-items:center;gap:8px;background:var(--glass);border:1px solid var(--glass-br);
+  border-radius:999px;padding:9px 16px;backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  font-size:13px;cursor:pointer;transition:border-color .2s,background .2s,opacity .4s;white-space:nowrap;}
+.pill:hover{border-color:rgba(255,255,255,.42);}
+.pill:focus-visible,.chip:focus-visible,#zpanel button:focus-visible,#card .close:focus-visible,#mini:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+.pill.static{cursor:default;}
+.pill.icon{padding:9px 13px;}
+.pill.on{background:var(--accent);border-color:var(--accent);color:#14100a;font-weight:600;}
+.pill .cnt{display:inline-flex;gap:9px;color:#e6ddcf;font-variant-numeric:tabular-nums;}
+.pill .cnt span{display:inline-flex;align-items:center;gap:4px;}
+.dot{width:8px;height:8px;border-radius:50%;flex:none;display:inline-block;}
+#topleft{position:absolute;top:max(14px,env(safe-area-inset-top,0px));left:max(16px,env(safe-area-inset-left,0px));
+  display:flex;gap:8px;align-items:center;transition:opacity .4s;}
+#topright{position:absolute;top:max(14px,env(safe-area-inset-top,0px));right:max(16px,env(safe-area-inset-right,0px));
+  display:flex;flex-direction:column;align-items:flex-end;gap:10px;z-index:7;}
+body.drone #topright{top:calc(5.5vh + 54px);right:58px;}
+#topcenter{position:absolute;top:max(14px,env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);
+  display:flex;flex-direction:column;align-items:center;gap:7px;pointer-events:none;transition:opacity .4s;}
+#topcenter .t{font-family:var(--font-h);font-weight:700;font-size:clamp(17px,2.4vw,24px);letter-spacing:.3px;
+  text-shadow:0 2px 18px rgba(0,0,0,.85);white-space:nowrap;}
+#topcenter .s{font-size:11.5px;color:#e6ddcf;text-shadow:0 1px 8px rgba(0,0,0,.95);white-space:nowrap;transition:opacity .4s;}
+body.zone #topcenter .s{opacity:0;}
+#summary{position:absolute;left:50%;transform:translateX(-50%);bottom:max(66px,calc(env(safe-area-inset-bottom,0px) + 54px));
+  display:flex;gap:6px;transition:opacity .4s;}
+body.zone #summary{opacity:0;pointer-events:none;}
+#summary span{display:inline-flex;flex-direction:column;align-items:center;background:var(--glass);border:1px solid var(--glass-br);
+  border-radius:12px;padding:5px 12px;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);min-width:92px;}
+#summary small{font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;white-space:nowrap;}
+#summary b{font-family:var(--font-h);font-size:15px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;}
+#summary b em{font-style:normal;font-family:var(--font-b);font-weight:400;font-size:10.5px;color:var(--muted);margin-left:3px;}
+#summary span.warn b{color:var(--warn);}
+#bottombar{position:absolute;bottom:max(16px,env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);
+  display:flex;gap:7px;max-width:calc(100vw - 24px);overflow-x:auto;padding:4px;scrollbar-width:none;
+  transition:opacity .4s,bottom .6s var(--ease);touch-action:pan-x;}
+body.drone #bottombar{opacity:0;pointer-events:none;}
+#bottombar::-webkit-scrollbar{display:none;}
+.chip{flex:none;background:var(--glass);border:1px solid var(--glass-br);border-radius:999px;padding:8px 14px;
+  font-size:12.5px;cursor:pointer;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  display:inline-flex;align-items:center;gap:7px;transition:border-color .15s,background .15s;}
+.chip:hover{border-color:rgba(255,255,255,.42);}
+.chip.active{background:var(--accent);border-color:var(--accent);color:#14100a;font-weight:600;}
+.chip.active .dot{background:#14100a !important;}
+
+/* Minimapa */
+#mini{position:relative;width:200px;aspect-ratio:16/9;border-radius:12px;overflow:hidden;border:1px solid var(--glass-br);
+  box-shadow:0 8px 30px rgba(0,0,0,.45);cursor:pointer;transition:opacity .4s;background:#000;}
+#mini img{width:100%;height:100%;display:block;opacity:.85;}
+#mini i{position:absolute;left:0;top:0;border:1.5px solid var(--accent);border-radius:3px;box-shadow:0 0 0 999px rgba(0,0,0,.28);
+  transform-origin:50% 50%;}
+
+/* Indicadores (tiles con tendencia) */
+.kt{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:8px 10px 7px;min-width:0;
+  transition:border-color .4s,background .4s;}
+.kt > span{display:block;font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.kv{display:flex;align-items:baseline;gap:4px;margin:2px 0 3px;white-space:nowrap;}
+.kv b{font-family:var(--font-h);font-size:19px;font-weight:600;font-variant-numeric:tabular-nums;transition:color .4s;}
+.kv small{font-size:10.5px;color:var(--muted);}
+.kt svg{display:block;width:100%;height:24px;color:var(--trend);overflow:visible;transition:color .4s;}
+.kt em{display:block;font-style:normal;font-size:9.5px;color:var(--muted);margin-top:3px;white-space:nowrap;}
+.kt.warn{border-color:rgba(255,194,75,.5);background:rgba(255,194,75,.09);}
+.kt.warn .kv b,.kt.warn svg{color:var(--warn);}
+.sec{display:flex;align-items:center;gap:7px;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);
+  font-weight:600;margin:12px 0 7px;}
+.live{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px var(--ok);animation:blink 1.6s ease-in-out infinite;}
+@keyframes blink{50%{opacity:.25;}}
+
+/* Panel de área */
+#zpanel{position:absolute;left:max(16px,env(safe-area-inset-left,0px));bottom:max(72px,calc(env(safe-area-inset-bottom,0px) + 60px));
+  width:330px;max-height:calc(100vh - 160px);overflow:auto;box-sizing:border-box;background:var(--glass);border:1px solid var(--glass-br);
+  border-radius:18px;backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);padding:16px 16px 8px;scrollbar-width:thin;
+  opacity:0;transform:translateY(18px);pointer-events:none;transition:opacity .5s,transform .6s var(--ease),bottom .6s var(--ease);}
+#zpanel.on{opacity:1;transform:none;pointer-events:auto;}
+body.drone #zpanel{left:58px;bottom:calc(5.5vh + 74px);max-height:calc(100vh - 11vh - 170px);}
+#zpanel .kick{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:600;}
+#zpanel h2{margin:4px 0 2px;font-family:var(--font-h);font-size:20px;font-weight:700;line-height:1.15;}
+#zpanel .desc{margin:0;font-size:12.5px;color:var(--muted);}
+#zpanel .zk{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;}
+#zpanel .zk .kt{padding:7px 8px 6px;}
+#zpanel .zk .kv b{font-size:15.5px;}
+#zpanel .zk svg{height:16px;}
+#zpanel .zk em{display:none;}
+#zpanel ul{list-style:none;margin:0;padding:0;}
+#zpanel li button{width:100%;display:flex;align-items:center;gap:9px;background:none;border:0;
+  border-top:1px solid rgba(255,255,255,.07);padding:8px 2px;cursor:pointer;text-align:left;font-size:12.5px;}
+#zpanel li button:hover span{color:#fff;}
+#zpanel li span{flex:1;min-width:0;color:#e2dbcf;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#zpanel li em{font-style:normal;font-size:11px;font-weight:600;white-space:nowrap;}
+
+/* Ficha de equipo */
+#card{position:absolute;right:max(16px,env(safe-area-inset-right,0px));bottom:max(72px,calc(env(safe-area-inset-bottom,0px) + 60px));
+  width:min(460px,calc(100vw - 32px));max-height:calc(100vh - 150px);overflow:auto;box-sizing:border-box;
+  background:var(--glass-strong);border:1px solid var(--glass-br);scrollbar-width:thin;
+  border-radius:18px;backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);padding:16px 18px 12px;
+  opacity:0;transform:translateY(22px);pointer-events:none;transition:opacity .35s,transform .45s var(--ease);z-index:6;}
+#card.on{opacity:1;pointer-events:auto;transform:none;}
+body.drone #card{right:58px;bottom:calc(5.5vh + 74px);max-height:calc(100vh - 11vh - 200px);}
+#card .head{display:flex;align-items:center;gap:12px;padding-right:22px;}
+.glyph{width:44px;height:44px;border-radius:12px;flex:none;display:flex;align-items:center;justify-content:center;
+  font-family:var(--font-h);font-weight:700;font-size:14px;color:#0b0d10;}
+#card .tt{flex:1;min-width:0;}
+#card h3{margin:0;font-family:var(--font-h);font-size:16.5px;font-weight:600;}
+#card .amb{margin:1px 0 0;font-size:12px;color:var(--muted);}
+.badge{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:4px 11px;font-size:11.5px;font-weight:600;flex:none;}
+#card .close{position:absolute;top:10px;right:12px;background:none;border:0;color:var(--muted);font-size:19px;cursor:pointer;padding:4px;line-height:1;}
+#card .close:hover{color:var(--fg);}
+#card .kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:7px;}
+.health{margin:13px 0 0;}
+.health .lbl{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:5px;}
+.health .bar{height:6px;border-radius:4px;background:rgba(255,255,255,.1);overflow:hidden;}
+.health .bar i{display:block;height:100%;border-radius:4px;}
+.specs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px 12px;font-size:12px;}
+.specs span{display:block;font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:1px;}
+.specs b{font-weight:500;word-break:break-word;}
+.specs .hot b{color:var(--accent);}
+.note{margin:11px 0 0;padding:9px 12px;border-left:3px solid var(--warn);background:rgba(255,194,75,.09);
+  border-radius:0 9px 9px 0;font-size:12.5px;line-height:1.45;}
+.hist{margin:10px 0 0;font-size:12px;}
+.hist div{display:flex;gap:10px;padding:5px 0;border-top:1px solid rgba(255,255,255,.07);}
+.hist time{color:var(--muted);font-variant-numeric:tabular-nums;flex:none;}
+
+.only-wide{display:inline-flex;}
+body.aerial .zone-only{display:none !important;}
+body.zone .aerial-only{display:none !important;}
+
+@media (max-width:1100px){ #summary span:nth-child(n+4){display:none;} #mini{width:150px;} }
+@media (max-width:760px){
+  .only-wide{display:none;}
+  #topcenter .s,#mini{display:none;}
+  body.zone #topcenter{opacity:0;}
+  #topcenter{top:max(62px,calc(env(safe-area-inset-top,0px) + 52px));}
+  #topcenter .t{font-size:17px;white-space:normal;text-align:center;width:calc(100vw - 40px);}
+  #summary span{min-width:0;padding:5px 9px;}
+  #summary span:nth-child(n+3){display:none;}
+  #zpanel{width:auto;right:max(16px,env(safe-area-inset-right,0px));padding:12px 14px 4px;}
+  #zpanel ul,#zpanel .desc,#zpanel .eq{display:none;}
+  #zpanel h2{font-size:18px;}
+  #card{right:16px;left:16px;width:auto;bottom:max(16px,env(safe-area-inset-bottom,0px));max-height:64vh;}
+  .specs{grid-template-columns:repeat(2,1fr);}
+  body.carded #zpanel,body.carded #bottombar{opacity:0;pointer-events:none;}
+  body.drone #zpanel{left:16px;right:16px;}
+  body.drone #card{left:16px;right:16px;}
+  body.drone #topright{right:16px;}
+  #drone .tel{gap:12px;font-size:10px;}
+  #drone .tel span:nth-child(n+4){display:none;}
+  #drone .rec{left:30px;} #drone .tl{right:30px;} #drone .now{display:none;}
+  #drone .fr{inset:calc(5.5vh + 12px) 12px;}
+}
+@media (prefers-reduced-motion:reduce){
+  #grain,.hs::before,.zpin .pt::after,.live{animation:none;}
+}
+</style>
+</head>
+<body class="aerial">
+<div id="stage" aria-label="Vista aérea de la planta de tratamiento de gas">
+  <div id="world"><img id="lo" src="img/planta/aerea-sm.jpg" alt="Vista aérea de la planta de tratamiento de gas y su entorno" draggable="false"><img id="hi" alt="" draggable="false"></div>
+  <div id="pins"></div>
+</div>
+<div id="vignette"></div>
+<div id="grain"></div>
+<div id="bars"></div>
+<div id="drone" aria-hidden="true">
+  <div class="fr"><i></i><i></i><i></i><i></i></div>
+  <div class="cross"></div>
+  <div class="rec"><b></b><span id="dTime">REC 00:00</span></div>
+  <div class="tl"><span id="dBat">BAT 92%</span> · 4K 30</div>
+  <div class="now" id="dNow"></div>
+  <div class="tel">
+    <span><em>ALT</em><b id="dAlt">0 m</b></span>
+    <span><em>VEL</em><b id="dSpd">0 km/h</b></span>
+    <span><em>RUMBO</em><b id="dHdg">0°</b></span>
+    <span><em>GIMBAL</em><b>-35°</b></span>
+    <span><em>GPS</em><b id="dGps"></b></span>
+  </div>
+</div>
+
+<div id="hud">
+  <div id="topleft"></div>
+  <div id="topcenter">
+    <div class="t">Planta de Tratamiento de Gas · Aguada Norte</div>
+    <div class="s">Tocá un área para volar · arrastrá o usá la rueda para moverte</div>
+  </div>
+  <div id="topright">
+    <button class="pill" id="tourBtn" aria-pressed="false"></button>
+    <div id="mini" role="button" tabindex="0" aria-label="Minimapa: tocá para mover la cámara"><img src="img/planta/aerea-sm.jpg" alt=""><i id="miniView"></i></div>
+  </div>
+  <div id="summary"></div>
+  <div id="zpanel" aria-live="polite"></div>
+  <div id="bottombar"></div>
+  <div id="card" role="dialog" aria-label="Ficha de equipo"></div>
+</div>
+
+<div id="intro"><div class="t">Planta de Tratamiento de Gas · Aguada Norte</div><div class="bar"><i></i></div><small>Cargando gemelo digital…</small></div>
+
+<script>
+'use strict';
+/* ============ Indicadores simulados en vivo ============ */
+const KREG=[];
+/* k(etiqueta, unidad, valor nominal, decimales, mín. operativo, máx. operativo, ruido) */
+function k(label,u,v,d=1,lo=null,hi=null,n){
+  const o={label,u,v,d,lo,hi,n:n??(Math.abs(v)*.004+Math.pow(10,-d)*.6),cur:v,hist:[]};
+  o.i=KREG.push(o)-1; return o;
+}
+const ESTADOS={
+  'Operativo':{c:'#3ddc97'},'Alerta':{c:'#ffc24b'},
+  'Mantenimiento':{c:'#5fb4ff'},'Fuera de servicio':{c:'#ff6b5e'}};
+const SEV={'Operativo':0,'Mantenimiento':1,'Alerta':2,'Fuera de servicio':3};
+
+/* Coordenadas en % de la imagen aérea.
+   x,y: dónde se ancla la etiqueta del área · cam: encuadre del dron sobre el área (z = acercamiento) */
+const ZONES=[
+  {id:'pad',nombre:'Pad de pozos AN-12',x:45.2,y:20.6,cam:{x:45,y:24,z:3},zf:3.4,desc:'Gas no convencional · 4 pozos horizontales',
+   kpis:[k('Producción del pad','MMm³/d',1.62,2,1.4,1.9),k('Presión de cabeza','bar',180,0,150,210),k('Agua de flowback','m³/d',46,0,0,80)]},
+  {id:'slug',nombre:'Slug catcher y colector',x:11,y:50,cam:{x:13,y:56,z:3},desc:'Recepción de gas de 6 pads',
+   kpis:[k('Gas de entrada','MMm³/d',6.92,2,6,7.5),k('Presión de llegada','bar',74.5,1,65,85),k('Líquidos','%',38,0,10,70)]},
+  {id:'separacion',nombre:'Separación de entrada',x:21.5,y:54.5,cam:{x:27,y:56,z:3},desc:'Remoción de líquidos y partículas',
+   kpis:[k('Condensado','m³/d',420,0,300,520),k('Agua de producción','m³/d',85,0,0,140),k('ΔP filtros','bar',.86,2,0,.8,.012)]},
+  {id:'aminas',nombre:'Endulzamiento con aminas',x:24.5,y:25,cam:{x:29.5,y:40,z:2.6},desc:'Remoción de CO₂ · MDEA 45 %',
+   kpis:[k('CO₂ entrada','%',3.8,2,0,4.5),k('CO₂ salida','%',1.6,2,0,2),k('Carga de amina','mol/mol',.42,2,0,.5)]},
+  {id:'deshidratacion',nombre:'Deshidratación con TEG',x:39.7,y:31,cam:{x:42,y:42,z:3},desc:'Ajuste de contenido de agua',
+   kpis:[k('Agua en gas','mg/Sm³',58,0,0,65),k('Pureza TEG','%',99.2,1,98.8,100,.04),k('Circulación TEG','m³/h',4.6,1,3.5,6)]},
+  {id:'dewpoint',nombre:'Ajuste de punto de rocío',x:50.5,y:43,cam:{x:50,y:50,z:2.8},desc:'Turboexpansión criogénica · recuperación de NGL',
+   kpis:[k('Punto de rocío HC','°C',-14.2,1,null,-4,.25),k('Salida cold box','°C',-38,1,-45,-32,.3),k('NGL recuperado','m³/d',310,0,250,360)]},
+  {id:'compresion',nombre:'Turbocompresión de venta',x:71.6,y:45,cam:{x:71.5,y:51,z:2.2},desc:'3 × 12 MW · descarga a gasoducto',
+   kpis:[k('Potencia total','MW',34.2,1,0,35.7),k('Presión de descarga','bar',92,1,85,98),k('Disponibilidad','%',97.6,1,95,100,.05)]},
+  {id:'medicion',nombre:'Medición fiscal y gasoducto',x:82,y:65,cam:{x:84,y:68,z:3},desc:'Entrega al gasoducto troncal',
+   kpis:[k('Gas a venta','MMm³/d',6.61,2,6,7.2),k('Poder calorífico','kcal/m³',9310,0,8850,10200,12),k('Presión gasoducto','bar',68.2,1,60,75)]},
+  {id:'condensado',nombre:'Condensado y despacho',x:62.8,y:30.5,cam:{x:65,y:34,z:2.6},desc:'Estabilización, almacenaje y carga a camión',
+   kpis:[k('RVP condensado','psi',10.4,1,0,12),k('Stock en tanques','m³',1840,0,600,5400,4),k('Despachos hoy','camiones',9,0,null,null,0)]},
+  {id:'antorcha',nombre:'Antorcha de planta',x:92.4,y:21,al:'b',cam:{x:90,y:31,z:3},desc:'Venteo de emergencia y seguridad',
+   kpis:[k('Gas a antorcha','Mm³/d',12,1,0,25),k('Pilotos con llama','de 3',2,0,3,3,0),k('Nivel KO drum','%',18,0,0,60)]},
+  {id:'energia',nombre:'Energía y sala de control',x:55,y:66,cam:{x:46,y:68,z:2.4},desc:'Generación propia · subestación 33 kV · DCS',
+   kpis:[k('Demanda eléctrica','MW',4.9,1,0,5.7),k('Factor de potencia','',.93,2,.9,1,.003),k('Gas combustible','Mm³/d',38,0,0,45)]},
+];
+const ZBY=Object.fromEntries(ZONES.map(z=>[z.id,z]));
+const ZK=(id,i)=>ZBY[id].kpis[i];
+const PLANT=[ZK('slug',0),ZK('medicion',0),ZK('dewpoint',0),ZK('aminas',1),ZK('compresion',2)];
+
+/* x,y: posición del equipo en la imagen aérea (%) */
+const ASSETS=[
+  /* Pad de pozos */
+  {id:'wh1',g:'P1',nombre:'Pozo AN-12-1h',tipo:'Pozo de gas',st:'pad',x:43.2,y:23.1,estado:'Operativo',salud:91,
+   marca:'Cabezal 10.000 psi',serie:'AN-12-1h',criticidad:'Alta',instalado:'2024',ultInsp:'05/11/2026',proxMant:'05/05/2027',nota:'',
+   kpis:[k('Presión de boca','bar',184,0,150,210),k('Caudal de gas','Mm³/d',428,0,350,500),k('Temperatura','°C',61,1,40,75),k('Choke','/64"',34,0,null,null,0)],
+   hist:[['05/11/2026','Prueba de válvulas SSV: OK'],['08/2026','Cambio de choke a 34/64"']]},
+  {id:'wh2',g:'P2',nombre:'Pozo AN-12-2h',tipo:'Pozo de gas',st:'pad',x:44.3,y:23.3,estado:'Operativo',salud:88,
+   marca:'Cabezal 10.000 psi',serie:'AN-12-2h',criticidad:'Alta',instalado:'2024',ultInsp:'05/11/2026',proxMant:'05/05/2027',nota:'',
+   kpis:[k('Presión de boca','bar',179,0,150,210),k('Caudal de gas','Mm³/d',402,0,350,500),k('Temperatura','°C',59,1,40,75)],
+   hist:[['05/11/2026','Prueba de válvulas SSV: OK']]},
+  {id:'wh3',g:'P3',nombre:'Pozo AN-12-3h',tipo:'Pozo de gas',st:'pad',x:46.1,y:23.1,estado:'Alerta',salud:57,
+   marca:'Cabezal 10.000 psi',serie:'AN-12-3h',criticidad:'Alta',instalado:'2024',ultInsp:'21/11/2026',proxMant:'27/11/2026',
+   nota:'Presión en anular B por encima del umbral. Se programa prueba de integridad y purga controlada.',
+   kpis:[k('Presión anular B','bar',41,1,0,35),k('Presión de boca','bar',171,0,150,210),k('Caudal de gas','Mm³/d',366,0,350,500)],
+   hist:[['21/11/2026','Alarma de presión anular B · OT generada'],['09/2026','Registro de integridad: OK']]},
+  {id:'wh4',g:'P4',nombre:'Pozo AN-12-4h',tipo:'Pozo de gas',st:'pad',x:47.4,y:23.3,estado:'Operativo',salud:90,
+   marca:'Cabezal 10.000 psi',serie:'AN-12-4h',criticidad:'Alta',instalado:'2024',ultInsp:'05/11/2026',proxMant:'05/05/2027',nota:'',
+   kpis:[k('Presión de boca','bar',186,0,150,210),k('Caudal de gas','Mm³/d',424,0,350,500),k('Temperatura','°C',62,1,40,75)],
+   hist:[['05/11/2026','Prueba de válvulas SSV: OK']]},
+  {id:'calentador',g:'H1',nombre:'Calentador de línea H-120',tipo:'Acondicionamiento',st:'pad',x:42,y:22.6,estado:'Operativo',salud:84,
+   marca:'Indirecto a baño · 1,5 MMBtu/h',serie:'TAG AN12-H120',criticidad:'Media',instalado:'2024',ultInsp:'10/2026',proxMant:'04/2027',nota:'',
+   kpis:[k('Temp. de salida','°C',42,1,35,50),k('Gas combustible','Mm³/d',1.4,2,0,2),k('Eficiencia','%',78,0,70,90)],
+   hist:[['10/2026','Limpieza de quemador y tubo de fuego']]},
+  {id:'workover',g:'WO',nombre:'Equipo de workover',tipo:'Intervención de pozos',st:'pad',x:45.3,y:21.6,estado:'Mantenimiento',salud:69,
+   marca:'Equipo de 550 HP',serie:'WO-07',criticidad:'Media',instalado:'—',ultInsp:'18/11/2026',proxMant:'En curso',
+   nota:'Intervención programada en AN-12-5h: limpieza de arena y cambio de tubing.',
+   kpis:[k('Avance de la intervención','%',62,0,null,null,0),k('Días en el pad','d',4,0,null,null,0)],
+   hist:[['18/11/2026','Montaje de equipo en AN-12']]},
+  /* Slug catcher */
+  {id:'slugcatcher',g:'SC',nombre:'Slug catcher SC-100',tipo:'Recepción',st:'slug',x:11.8,y:54,estado:'Operativo',salud:89,
+   marca:'Tipo dedos · 8 × 48"',serie:'TAG PTG-SC100',criticidad:'Alta',instalado:'2023',ultInsp:'08/2026',proxMant:'08/2027',nota:'',
+   kpis:[k('Nivel de líquidos','%',38,0,10,70),k('Presión','bar',74.5,1,65,85),k('Volumen de líquido','m³',212,0,0,450)],
+   hist:[['08/2026','Medición de espesores por UT: OK']]},
+  {id:'manifold',g:'MF',nombre:'Manifold de entrada',tipo:'Colector',st:'slug',x:7,y:63.5,estado:'Operativo',salud:92,
+   marca:'Colector 24" · 6 bocas',serie:'TAG PTG-MF01',criticidad:'Alta',instalado:'2023',ultInsp:'10/2026',proxMant:'10/2027',nota:'',
+   kpis:[k('Caudal total','MMm³/d',6.92,2,6,7.5),k('Temperatura','°C',31,1,15,45)],
+   hist:[['10/2026','Prueba funcional de ESD de entrada']]},
+  {id:'receptor',g:'PR',nombre:'Trampa receptora de scraper',tipo:'Integridad',st:'slug',x:5.3,y:57,estado:'Mantenimiento',salud:74,
+   marca:'20" ANSI 600',serie:'TAG PTG-PR01',criticidad:'Media',instalado:'2023',ultInsp:'19/11/2026',proxMant:'En curso',
+   nota:'Inspección de cierre rápido y recambio de o-rings en ventana programada.',
+   kpis:[k('Días desde última corrida','d',12,0,0,30,0),k('Presión','bar',74.1,1,65,85)],
+   hist:[['11/2026','Corrida de scraper de limpieza']]},
+  /* Separación */
+  {id:'sepentrada',g:'SE',nombre:'Separador trifásico V-200',tipo:'Separación',st:'separacion',x:20.7,y:56.2,estado:'Operativo',salud:86,
+   marca:'Horizontal 96" × 30 ft',serie:'TAG PTG-V200',criticidad:'Alta',instalado:'2023',ultInsp:'08/2026',proxMant:'08/2027',nota:'',
+   kpis:[k('Presión','bar',71.8,1,65,80),k('Nivel de condensado','%',46,0,20,70),k('Nivel de agua','%',22,0,10,50)],
+   hist:[['08/2026','Prueba de PSV y control de niveles']]},
+  {id:'filtro',g:'FC',nombre:'Filtros coalescedores F-210A/B',tipo:'Filtración',st:'separacion',x:27.1,y:58,estado:'Alerta',salud:61,
+   marca:'2 × 100 % · cartuchos',serie:'TAG PTG-F210',criticidad:'Alta',instalado:'2023',ultInsp:'20/11/2026',proxMant:'26/11/2026',
+   nota:'ΔP cerca de saturación. Cambio de cartuchos en F-210A programado.',
+   kpis:[k('ΔP','bar',.86,2,0,.8,.012),k('Arrastre de líquidos','ppm',3.2,1,0,5)],
+   hist:[['20/11/2026','ΔP sobre 0,8 bar · OT generada'],['06/2026','Cambio de cartuchos F-210B']]},
+  {id:'aguaprod',g:'WT',nombre:'Tratamiento de agua de producción',tipo:'Efluentes',st:'separacion',x:36.6,y:56.5,estado:'Operativo',salud:83,
+   marca:'Skid de flotación + filtro',serie:'TAG PTG-WT01',criticidad:'Media',instalado:'2023',ultInsp:'09/2026',proxMant:'03/2027',nota:'',
+   kpis:[k('Caudal','m³/d',85,0,0,140),k('Aceite en agua','ppm',18,0,0,30)],
+   hist:[['09/2026','Limpieza de celdas de flotación']]},
+  /* Aminas */
+  {id:'absorbedora',g:'T3',nombre:'Torre absorbedora T-300',tipo:'Endulzamiento',st:'aminas',x:24.5,y:35,estado:'Operativo',salud:90,
+   marca:'Ø 2,4 m × 28 m · 20 platos',serie:'TAG PTG-T300',criticidad:'Alta',instalado:'2023',ultInsp:'07/2026',proxMant:'Parada 2027',nota:'',
+   kpis:[k('CO₂ a la salida','%',1.6,2,0,2),k('Caudal de gas','MMm³/d',6.85,2,6,7.5),k('ΔP de torre','bar',.34,2,0,.6)],
+   hist:[['07/2026','Termografía de casco: sin hallazgos']]},
+  {id:'regeneradora',g:'T31',nombre:'Torre regeneradora T-310',tipo:'Endulzamiento',st:'aminas',x:30.9,y:36.5,estado:'Operativo',salud:85,
+   marca:'Ø 1,8 m × 22 m',serie:'TAG PTG-T310',criticidad:'Alta',instalado:'2023',ultInsp:'07/2026',proxMant:'Parada 2027',nota:'',
+   kpis:[k('Temp. de fondo','°C',121,1,115,126),k('Carga residual','mol/mol',.009,3,0,.015,.0003)],
+   hist:[['07/2026','Análisis de amina: sales estables 0,6 %']]},
+  {id:'rehervidor',g:'RB',nombre:'Rehervidor E-315',tipo:'Intercambio',st:'aminas',x:33.8,y:47,estado:'Operativo',salud:82,
+   marca:'Kettle · 8,5 MW',serie:'TAG PTG-E315',criticidad:'Alta',instalado:'2023',ultInsp:'09/2026',proxMant:'Parada 2027',nota:'',
+   kpis:[k('Duty','MW',8.4,1,6,9.5),k('Temp. de vapor','°C',152,0,145,160)],
+   hist:[['09/2026','Prueba de estanqueidad de haz']]},
+  {id:'bombasamina',g:'PA',nombre:'Bombas de amina pobre P-320A/B',tipo:'Bombeo',st:'aminas',x:28.4,y:48,estado:'Alerta',salud:59,
+   marca:'Centrífugas · 2 × 250 kW',serie:'TAG PTG-P320',criticidad:'Alta',instalado:'2023',ultInsp:'21/11/2026',proxMant:'28/11/2026',
+   nota:'Vibración en P-320A sobre umbral. Operando con P-320B; análisis de rodamientos en curso.',
+   kpis:[k('Vibración P-320A','mm/s',6.4,1,0,4.5),k('Caudal','m³/h',212,0,180,240),k('Temp. rodamiento','°C',78,0,0,85)],
+   hist:[['21/11/2026','Vibración sobre umbral · cambio a bomba B'],['05/2026','Alineación láser']]},
+  /* Deshidratación */
+  {id:'contactorteg',g:'T4',nombre:'Contactora de glicol T-400',tipo:'Deshidratación',st:'deshidratacion',x:39.7,y:36.5,estado:'Operativo',salud:88,
+   marca:'Ø 2,0 m · empaque estructurado',serie:'TAG PTG-T400',criticidad:'Alta',instalado:'2023',ultInsp:'07/2026',proxMant:'Parada 2027',nota:'',
+   kpis:[k('Agua en gas tratado','mg/Sm³',58,0,0,65),k('Temp. de gas','°C',32,1,20,40),k('ΔP de torre','bar',.22,2,0,.5)],
+   hist:[['07/2026','Inspección de demister: OK']]},
+  {id:'regenteg',g:'RG',nombre:'Regenerador de TEG R-410',tipo:'Deshidratación',st:'deshidratacion',x:43.75,y:44,estado:'Operativo',salud:84,
+   marca:'Rehervidor a fuego directo',serie:'TAG PTG-R410',criticidad:'Media',instalado:'2023',ultInsp:'10/2026',proxMant:'04/2027',nota:'',
+   kpis:[k('Pureza TEG','%',99.2,1,98.8,100,.04),k('Temp. rehervidor','°C',198,0,190,204)],
+   hist:[['10/2026','Cambio de filtros de carbón activado']]},
+  {id:'bombasteg',g:'PG',nombre:'Bombas de glicol P-420A/B',tipo:'Bombeo',st:'deshidratacion',x:41.9,y:48.3,estado:'Mantenimiento',salud:72,
+   marca:'Desplazamiento positivo · 2 × 100 %',serie:'TAG PTG-P420',criticidad:'Media',instalado:'2023',ultInsp:'19/11/2026',proxMant:'En curso',
+   nota:'Recambio de sellos en P-420B; operando con bomba A.',
+   kpis:[k('Circulación','m³/h',4.6,1,3.5,6),k('Presión de descarga','bar',76,0,70,85)],
+   hist:[['19/11/2026','Pérdida por sellos en P-420B · OT abierta']]},
+  /* Punto de rocío */
+  {id:'turboexp',g:'TX',nombre:'Turboexpansor-compresor TX-500',tipo:'Criogenia',st:'dewpoint',x:51.9,y:56.7,estado:'Operativo',salud:87,
+   marca:'Expansor-compresor · 4,5 MW',serie:'TAG PTG-TX500',criticidad:'Alta',instalado:'2023',ultInsp:'11/2026',proxMant:'05/2027',nota:'',
+   kpis:[k('Velocidad','rpm',18400,0,16000,20500,60),k('Vibración','µm',22,0,0,40),k('Eficiencia','%',82,1,78,90),k('Temp. cojinete','°C',71,0,0,90)],
+   hist:[['11/2026','Análisis de aceite: OK'],['05/2026','Inspección de sellos secos']]},
+  {id:'coldbox',g:'CB',nombre:'Separador frío y cold box E-510',tipo:'Criogenia',st:'dewpoint',x:45.9,y:56.1,estado:'Operativo',salud:90,
+   marca:'Placas de aluminio soldadas',serie:'TAG PTG-E510',criticidad:'Alta',instalado:'2023',ultInsp:'09/2026',proxMant:'Parada 2027',nota:'',
+   kpis:[k('Temp. de salida','°C',-38,1,-45,-32,.3),k('Approach','°C',3.2,1,2,5)],
+   hist:[['09/2026','Monitoreo de ΔP por pasaje: estable']]},
+  {id:'chiller',g:'CH',nombre:'Aeroenfriadores de propano K-520',tipo:'Refrigeración',st:'dewpoint',x:52.5,y:43.9,estado:'Operativo',salud:81,
+   marca:'Circuito de propano · 1,8 MW',serie:'TAG PTG-K520',criticidad:'Media',instalado:'2023',ultInsp:'10/2026',proxMant:'04/2027',nota:'',
+   kpis:[k('Temp. de evaporación','°C',-24,1,-30,-18,.25),k('Presión de succión','bar',1.9,2,1.5,2.5)],
+   hist:[['10/2026','Reposición de propano: 80 kg']]},
+  /* Turbocompresión */
+  {id:'tc1',g:'C1',nombre:'Turbocompresor TC-601',tipo:'Compresión',st:'compresion',x:63.75,y:52.2,estado:'Operativo',salud:89,
+   marca:'Turbina 11,9 MW · centrífugo',serie:'TAG PTG-TC601',criticidad:'Alta',instalado:'2023',ultInsp:'10/2026',proxMant:'Insp. 16.000 h',nota:'',
+   kpis:[k('Potencia','MW',11.6,1,0,11.9),k('Temp. de escape','°C',488,0,0,520),k('Vibración','mm/s',2.4,1,0,4.5),k('Horas de marcha','h',14210,0,null,null,0)],
+   hist:[['10/2026','Lavado de compresor axial']]},
+  {id:'tc2',g:'C2',nombre:'Turbocompresor TC-602',tipo:'Compresión',st:'compresion',x:71.6,y:52.2,estado:'Alerta',salud:62,
+   marca:'Turbina 11,9 MW · centrífugo',serie:'TAG PTG-TC602',criticidad:'Alta',instalado:'2023',ultInsp:'22/11/2026',proxMant:'02/12/2026',
+   nota:'Temperatura de escape sobre límite con dispersión entre termocuplas. Boroscopía programada.',
+   kpis:[k('Temp. de escape','°C',531,0,0,520),k('Potencia','MW',11.2,1,0,11.9),k('Vibración','mm/s',3.1,1,0,4.5),k('Dispersión T5','°C',38,0,0,30)],
+   hist:[['22/11/2026','Alarma de temperatura de escape · OT generada'],['10/2026','Lavado de compresor axial']]},
+  {id:'tc3',g:'C3',nombre:'Turbocompresor TC-603',tipo:'Compresión',st:'compresion',x:79.1,y:51.7,estado:'Operativo',salud:91,
+   marca:'Turbina 11,9 MW · centrífugo',serie:'TAG PTG-TC603',criticidad:'Alta',instalado:'2023',ultInsp:'10/2026',proxMant:'Insp. 16.000 h',nota:'',
+   kpis:[k('Potencia','MW',11.4,1,0,11.9),k('Temp. de escape','°C',492,0,0,520),k('Vibración','mm/s',2.1,1,0,4.5)],
+   hist:[['10/2026','Calibración de detectores de gas en enclosure']]},
+  {id:'aerodescarga',g:'AE',nombre:'Aeroenfriadores de descarga',tipo:'Intercambio',st:'compresion',x:66.7,y:57.2,estado:'Operativo',salud:83,
+   marca:'Tiro forzado · 12 ventiladores',serie:'TAG PTG-AC610',criticidad:'Media',instalado:'2023',ultInsp:'09/2026',proxMant:'03/2027',nota:'',
+   kpis:[k('Temp. de salida','°C',48,1,0,52),k('Ventiladores en servicio','de 12',12,0,12,null,0)],
+   hist:[['09/2026','Limpieza de haces y control de correas']]},
+  /* Medición */
+  {id:'ultrasonico',g:'FQ',nombre:'Puente de medición ultrasónico',tipo:'Medición fiscal',st:'medicion',x:79.1,y:68.3,estado:'Operativo',salud:93,
+   marca:'Ultrasónico multicuerda · 2 + 1 tramos',serie:'TAG PTG-FQ900',criticidad:'Alta',instalado:'2023',ultInsp:'11/2026',proxMant:'05/2027',nota:'',
+   kpis:[k('Gas a venta','MMm³/d',6.61,2,6,7.2),k('Desvío entre tramos','%',.07,2,0,.2,.005),k('Velocidad de flujo','m/s',11.8,1,0,20)],
+   hist:[['11/2026','Verificación con tramo patrón: desvío 0,07 %']]},
+  {id:'cromatografo',g:'AT',nombre:'Cromatógrafo de proceso AT-910',tipo:'Calidad de gas',st:'medicion',x:85.9,y:68.9,estado:'Mantenimiento',salud:76,
+   marca:'Cromatógrafo C6+ en línea',serie:'TAG PTG-AT910',criticidad:'Alta',instalado:'2023',ultInsp:'23/11/2026',proxMant:'En curso',
+   nota:'Calibración mensual con gas patrón en curso; valores retenidos.',
+   kpis:[k('Poder calorífico','kcal/m³',9310,0,8850,10200,12),k('CO₂','%',1.6,2,0,2),k('Densidad relativa','',.612,3,.55,.7,.001)],
+   hist:[['23/11/2026','Calibración mensual en curso'],['10/2026','Cambio de columna C2']]},
+  {id:'lanzador',g:'PL',nombre:'Trampa lanzadora de scraper',tipo:'Integridad',st:'medicion',x:89.4,y:69.6,estado:'Operativo',salud:87,
+   marca:'24" ANSI 600',serie:'TAG PTG-PL01',criticidad:'Media',instalado:'2023',ultInsp:'10/2026',proxMant:'04/2027',nota:'',
+   kpis:[k('Presión del gasoducto','bar',68.2,1,60,75),k('Días desde última corrida','d',34,0,0,60,0)],
+   hist:[['10/2026','Corrida de scraper instrumentado (ILI)']]},
+  /* Condensado */
+  {id:'estabilizadora',g:'T7',nombre:'Torre estabilizadora T-700',tipo:'Estabilización',st:'condensado',x:53.75,y:32.2,estado:'Operativo',salud:86,
+   marca:'Ø 1,5 m × 18 m · 16 platos',serie:'TAG PTG-T700',criticidad:'Alta',instalado:'2023',ultInsp:'08/2026',proxMant:'Parada 2027',nota:'',
+   kpis:[k('RVP del producto','psi',10.4,1,0,12),k('Temp. de fondo','°C',164,0,155,172),k('Producción','m³/d',410,0,300,520)],
+   hist:[['08/2026','Calibración de analizador de RVP']]},
+  {id:'tkcond',g:'TK',nombre:'Tanques de condensado TK-710/740',tipo:'Almacenaje',st:'condensado',x:62.8,y:33.3,estado:'Operativo',salud:88,
+   marca:'API 650 · 4 × 1.500 m³',serie:'TAG PTG-TK710',criticidad:'Media',instalado:'2023',ultInsp:'05/2026',proxMant:'05/2029',nota:'',
+   kpis:[k('Nivel TK-710','%',64,0,10,90,.15),k('Nivel TK-720','%',41,0,10,90,.15)],
+   hist:[['05/2026','Inspección API 653 externa']]},
+  {id:'cargadero',g:'CG',nombre:'Cargadero de camiones',tipo:'Despacho',st:'condensado',x:76.9,y:37.8,estado:'Operativo',salud:90,
+   marca:'2 islas · medidor Coriolis',serie:'TAG PTG-LD01',criticidad:'Media',instalado:'2023',ultInsp:'10/2026',proxMant:'04/2027',nota:'',
+   kpis:[k('Caudal de carga','m³/h',85,0,0,110),k('Despachos hoy','camiones',9,0,null,null,0)],
+   hist:[['10/2026','Contraste de medidor Coriolis']]},
+  /* Antorcha */
+  {id:'tea',g:'FL',nombre:'Tea de antorcha',tipo:'Venteo y seguridad',st:'antorcha',x:91.6,y:33.9,estado:'Operativo',salud:82,
+   marca:'Elevada 24" · 30 m',serie:'TAG PTG-FL01',criticidad:'Alta',instalado:'2023',ultInsp:'07/2026',proxMant:'07/2027',nota:'',
+   kpis:[k('Gas a antorcha','Mm³/d',12,1,0,25),k('Gas de purga','m³/h',18,0,10,30)],
+   hist:[['07/2026','Inspección con dron: tip en condición']]},
+  {id:'piloto',g:'PI',nombre:'Pilotos e ignición',tipo:'Venteo y seguridad',st:'antorcha',x:92.3,y:22.5,estado:'Alerta',salud:60,
+   marca:'Ignición FFG · 3 pilotos',serie:'TAG PTG-FL01-PI',criticidad:'Alta',instalado:'2023',ultInsp:'20/11/2026',proxMant:'28/11/2026',
+   nota:'Termocupla del piloto 2 sin señal. Verificación y recambio programados.',
+   kpis:[k('Pilotos con llama','de 3',2,0,3,3,0),k('Temp. piloto 1','°C',612,0,400,null),k('Temp. piloto 3','°C',598,0,400,null)],
+   hist:[['20/11/2026','Pérdida de señal TC piloto 2 · OT generada']]},
+  {id:'kodrum',g:'KO',nombre:'KO drum V-950',tipo:'Venteo y seguridad',st:'antorcha',x:94.3,y:39,estado:'Operativo',salud:86,
+   marca:'Separador de líquidos horizontal',serie:'TAG PTG-V950',criticidad:'Media',instalado:'2023',ultInsp:'07/2026',proxMant:'07/2027',nota:'',
+   kpis:[k('Nivel','%',18,0,0,60),k('Presión','bar',.4,2,0,1.5)],
+   hist:[['07/2026','Drenaje y prueba de alarma de nivel']]},
+  /* Energía */
+  {id:'generadores',g:'G8',nombre:'Motogeneradores G-801A/B/C',tipo:'Generación eléctrica',st:'energia',x:58.4,y:68.3,estado:'Operativo',salud:86,
+   marca:'Motor a gas · 3 × 1,9 MW',serie:'TAG PTG-G801',criticidad:'Alta',instalado:'2023',ultInsp:'11/2026',proxMant:'Mant. 4.000 h',nota:'',
+   kpis:[k('Potencia generada','MW',4.9,1,0,5.7),k('Carga por unidad','%',86,0,0,95),k('Temp. de agua de camisa','°C',88,0,70,96)],
+   hist:[['11/2026','Cambio de bujías G-801B']]},
+  {id:'trafo',g:'TR',nombre:'Transformador TR-01',tipo:'Subestación',st:'energia',x:47.5,y:71.7,estado:'Operativo',salud:90,
+   marca:'33 / 6,6 kV · 10 MVA',serie:'TAG PTG-TR01',criticidad:'Alta',instalado:'2023',ultInsp:'09/2026',proxMant:'09/2027',nota:'',
+   kpis:[k('Carga','%',58,0,0,90),k('Temp. de aceite','°C',61,0,0,85)],
+   hist:[['09/2026','Análisis de gases disueltos: normal']]},
+  {id:'scada',g:'DC',nombre:'Sala de control · DCS',tipo:'Control y seguridad',st:'energia',x:29.4,y:67.6,estado:'Operativo',salud:95,
+   marca:'DCS redundante + SIS',serie:'TAG PTG-CCR',criticidad:'Alta',instalado:'2023',ultInsp:'11/2026',proxMant:'05/2027',nota:'',
+   kpis:[k('Alarmas activas','',7,0,0,10,0),k('Lazos en automático','%',96,0,92,100,.1),k('Disponibilidad de red','%',99.9,1,99.5,100,.02)],
+   hist:[['11/2026','Prueba funcional de SIS en lazos de ESD']]},
+];
+const AZ=id=>ASSETS.filter(a=>a.st===id);
+const worst=id=>AZ(id).reduce((w,a)=>SEV[a.estado]>SEV[w]?a.estado:w,'Operativo');
+
+const NF={};
+const fmt=(v,d)=>(NF[d]??=new Intl.NumberFormat('es-AR',{minimumFractionDigits:d,maximumFractionDigits:d})).format(v);
+const outOf=o=>(o.lo!=null&&o.cur<o.lo)||(o.hi!=null&&o.cur>o.hi);
+const rangeTxt=o=>o.lo!=null&&o.hi!=null?(o.lo===o.hi?`Objetivo ${fmt(o.lo,o.d)}`:`Rango ${fmt(o.lo,o.d)} – ${fmt(o.hi,o.d)}`)
+  :o.hi!=null?`Máx. ${fmt(o.hi,o.d)}`:o.lo!=null?`Mín. ${fmt(o.lo,o.d)}`:'Sin límite';
+const gauss=()=>(Math.random()+Math.random()+Math.random()-1.5)*1.15;
+function tickAll(){
+  for(const o of KREG){
+    if(o.n>0) o.cur+=(o.v-o.cur)*.15+gauss()*o.n;
+    o.hist.push(o.cur); if(o.hist.length>48) o.hist.shift();
+  }
+}
+for(let i=0;i<48;i++) tickAll();
+function sparkPts(o){
+  const h=o.hist; let mn=Math.min(...h), mx=Math.max(...h);
+  const pad=(mx-mn)*.2||Math.abs(o.v)*.01||1; mn-=pad; mx+=pad;
+  return h.map((y,i)=>`${(i/(h.length-1)*100).toFixed(1)},${(29-(y-mn)/(mx-mn)*28).toFixed(1)}`).join(' ');
+}
+const tile=o=>`<div class="kt${outOf(o)?' warn':''}" data-kt="${o.i}"><span title="${o.label}">${o.label}</span>
+  <div class="kv"><b data-kv="${o.i}">${fmt(o.cur,o.d)}</b><small>${o.u}</small></div>
+  <svg viewBox="0 0 100 30" preserveAspectRatio="none" data-ks="${o.i}" aria-hidden="true"><polyline fill="none" stroke="currentColor" stroke-width="1.6" vector-effect="non-scaling-stroke" stroke-linejoin="round" points="${sparkPts(o)}"/></svg>
+  <em>${rangeTxt(o)}</em></div>`;
+function refreshLive(){
+  document.querySelectorAll('[data-kv]').forEach(el=>{const o=KREG[el.dataset.kv]; el.textContent=fmt(o.cur,o.d);});
+  document.querySelectorAll('[data-ks]').forEach(el=>{el.firstElementChild.setAttribute('points',sparkPts(KREG[el.dataset.ks]));});
+  document.querySelectorAll('[data-kt]').forEach(el=>el.classList.toggle('warn',outOf(KREG[el.dataset.kt])));
+}
+setInterval(()=>{ if(document.hidden) return; tickAll(); refreshLive(); },1300);
+
+/* ============ Cámara de dron ============ */
+const $=s=>document.querySelector(s);
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const lerp=(a,b,t)=>a+(b-a)*t;
+const RM=matchMedia('(prefers-reduced-motion: reduce)').matches;
+const AR=3840/2160, ZMAX=4.2;
+const HOME={x:50,y:52,z:1.06};
+const stage=$('#stage'), world=$('#world'), pinsEl=$('#pins'), card=$('#card'), zpanel=$('#zpanel');
+let vw=0,vh=0,fw=0,fh=0;
+let mode='aerial', currentZone=null, selected=null, busy=false;
+
+/* base: hacia dónde apunta la cámara · cam: lo que se ve en este cuadro (base + vuelo + flotación) */
+let base={...HOME,r:0}, cam={...base}, flight=null, hoverAmp=1;
+const T0=performance.now();
+
+function layout(){
+  vw=innerWidth; vh=innerHeight;
+  if(vw/vh>AR){fw=vw;fh=vw/AR;} else {fh=vh;fw=vh*AR;}
+  world.style.width=fw+'px'; world.style.height=fh+'px';
+}
+/* Acercamiento mínimo para que, con el giro aplicado, nunca se vean los bordes de la foto */
+function zMin(r){
+  const a=Math.abs(r)*Math.PI/180, c=Math.cos(a), s=Math.sin(a);
+  return Math.max((vw*c+vh*s)/fw,(vw*s+vh*c)/fh)*1.002;
+}
+function fit(c){
+  const z=clamp(c.z,zMin(c.r||0),ZMAX);
+  const a=Math.abs(c.r||0)*Math.PI/180, co=Math.cos(a), si=Math.sin(a);
+  const hx=(vw/2*co+vh/2*si)/z/fw*100, hy=(vw/2*si+vh/2*co)/z/fh*100;
+  return {x:clamp(c.x,hx,100-hx), y:clamp(c.y,hy,100-hy), z, r:c.r||0};
+}
+const ease=t=>t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
+const easeSoft=t=>.5-.5*Math.cos(Math.PI*t);
+
+/* Vuelo: interpola posición, acercamiento en escala logarítmica, "salto" de altura en trayectos largos
+   y alabeo hacia el lado del desplazamiento, como un dron real */
+function fly(to,{dur,hop,bank=true,curve=ease}={}){
+  const from={...cam};
+  to=fit({...to,r:0});
+  const dx=(to.x-from.x)/100*fw, dy=(to.y-from.y)/100*fh;
+  const dist=Math.hypot(dx,dy)/Math.max(vw,1);
+  dur=dur??clamp(1300+dist*1300+Math.abs(Math.log(to.z/from.z))*500,1200,3600);
+  hop=hop??clamp(dist*.32,0,.42);
+  const side=clamp(dx/(vw*.8),-1,1);
+  if(flight) flight.done(false);
+  if(RM) dur=1;
+  return new Promise(res=>{
+    flight={from,to,dur,hop,bank:bank?side*2.6:0,curve,t0:performance.now(),
+      done:(ok)=>{flight=null;res(ok);}};
+    document.body.classList.add('flying');
+  });
+}
+function stepFlight(now){
+  const f=flight, t=clamp((now-f.t0)/f.dur,0,1), e=f.curve(t), arc=Math.sin(Math.PI*t);
+  const lz=lerp(Math.log(f.from.z),Math.log(f.to.z),easeSoft(t));
+  base={x:lerp(f.from.x,f.to.x,e), y:lerp(f.from.y,f.to.y,e), z:Math.exp(lz)*(1-f.hop*arc), r:-f.bank*arc};
+  if(t>=1){ base={...f.to}; f.done(true); if(!flight) document.body.classList.remove('flying'); }
+}
+
+/* Proyección de un punto de la foto (%) a pantalla */
+let M=new DOMMatrix();
+function project(x,y){ const p=M.transformPoint(new DOMPoint(x/100*fw,y/100*fh)); return [p.x,p.y]; }
+
+const PINS=[];
+function buildPins(){
+  ZONES.forEach(z=>{
+    const c=ESTADOS[worst(z.id)].c, h=z.kpis[0], w=document.createElement('div'), b=document.createElement('button');
+    w.className='pin'; b.className='zpin'+(z.al==='b'?' b':'')+(z.x>86?' r':''); b.dataset.z=z.id; b.style.setProperty('--hsc',c);
+    b.setAttribute('aria-label',`Volar a ${z.nombre}`);
+    b.innerHTML=`<span class="lab"><i class="dot" style="background:${c}"></i>${z.nombre}<small><b data-kv="${h.i}">${fmt(h.cur,h.d)}</b> ${h.u}</small></span><span class="stem"></span><span class="pt"></span>`;
+    b.addEventListener('click',()=>{ if(!dragged) goZone(z.id); });
+    w.appendChild(b); pinsEl.appendChild(w); PINS.push({w,x:z.x,y:z.y});
+  });
+  ASSETS.forEach(a=>{
+    const w=document.createElement('div'), b=document.createElement('button');
+    w.className='pin'; b.className='hs'; b.dataset.a=a.id; b.style.setProperty('--hsc',ESTADOS[a.estado].c);
+    b.setAttribute('aria-label',`${a.nombre} · ${a.estado}`);
+    b.innerHTML=`<i></i><span>${a.nombre}</span>`;
+    b.addEventListener('click',()=>{ if(!dragged) openAsset(a); });
+    w.appendChild(b); pinsEl.appendChild(w); PINS.push({w,x:a.x,y:a.y});
+  });
+}
+function showZoneHotspots(id){
+  pinsEl.querySelectorAll('.hs').forEach(h=>{
+    const a=ASSETS.find(x=>x.id===h.dataset.a); h.classList.toggle('on',!!id&&a.st===id);
+  });
+}
+
+/* Telemetría del dron */
+const dAlt=$('#dAlt'), dSpd=$('#dSpd'), dHdg=$('#dHdg'), dGps=$('#dGps'), dTime=$('#dTime'), dBat=$('#dBat');
+let last=null, spd=0, recT0=0;
+function telemetry(now){
+  if(!document.body.classList.contains('drone')) return;
+  if(last){
+    const dt=Math.max((now-last.t)/1000,.001);
+    const m=Math.hypot(cam.x-last.x,cam.y-last.y)*6.2+Math.abs(Math.log(cam.z/last.z))*140;
+    spd=lerp(spd,m/dt*3.6,.06);
+  }
+  last={t:now,x:cam.x,y:cam.y,z:cam.z};
+  dAlt.textContent=Math.round(38+150/cam.z)+' m';
+  dSpd.textContent=Math.round(spd)+' km/h';
+  dHdg.textContent=String(Math.round((214+(cam.x-50)*.5-cam.r*4+360)%360)).padStart(3,'0')+'°';
+  const lat=38.2105+(cam.y-50)*.00004, lon=68.8412-(cam.x-50)*.00006;
+  dGps.textContent=`${lat.toFixed(4)}°S ${lon.toFixed(4)}°O`;
+  const s=Math.floor((now-recT0)/1000);
+  dTime.textContent=`REC ${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+  dBat.textContent=`BAT ${Math.max(20,92-Math.floor(s/20))}%`;
+}
+
+const miniView=$('#miniView');
+function frame(now){
+  if(flight) stepFlight(now);
+  /* Flotación de dron estacionario: deriva suave y pequeño alabeo */
+  const t=(now-T0)/1000, A=RM?0:hoverAmp;
+  cam=fit({x:base.x+Math.sin(t*.31)*.28*A/base.z, y:base.y+Math.cos(t*.23)*.2*A/base.z,
+           z:base.z*(1+Math.sin(t*.19)*.008*A), r:base.r+Math.sin(t*.27)*.22*A});
+  M=new DOMMatrix().translate(vw/2,vh/2).rotate(cam.r).scale(cam.z).translate(-cam.x/100*fw,-cam.y/100*fh);
+  world.style.transform=M.toString();
+  for(const p of PINS){
+    const [x,y]=project(p.x,p.y);
+    const off=x<-260||x>vw+260||y<-160||y>vh+160;
+    p.w.classList.toggle('off',off);
+    if(!off) p.w.style.transform=`translate3d(${x.toFixed(1)}px,${y.toFixed(1)}px,0)`;
+  }
+  const W=vw/(fw*cam.z)*100, H=vh/(fh*cam.z)*100;
+  miniView.style.cssText=`width:${W}%;height:${H}%;transform:translate(${((cam.x-W/2)/W*100).toFixed(2)}%,${((cam.y-H/2)/H*100).toFixed(2)}%) rotate(${(-cam.r).toFixed(2)}deg)`;
+  telemetry(now);
+  requestAnimationFrame(frame);
+}
+const camFor=z=>({x:z.cam.x,y:z.cam.y,z:z.cam.z});
+
+/* ============ Navegación ============ */
+async function goZone(id,opts){
+  if(mode==='zone'&&currentZone===id&&!selected) return;
+  closeCard(true);
+  mode='zone'; currentZone=id; updateHud(); showZoneHotspots(null);
+  const ok=await fly(camFor(ZBY[id]),opts);
+  if(ok&&currentZone===id){ showZoneHotspots(id); zpanel.classList.add('on'); }
+  return ok;
+}
+async function goOverview(opts){
+  if(mode==='aerial'&&!flight) { return fly(HOME,opts); }
+  closeCard(true);
+  mode='aerial'; currentZone=null; updateHud(); showZoneHotspots(null);
+  return fly(HOME,opts);
+}
+function step(d){
+  const i=ZONES.findIndex(z=>z.id===currentZone);
+  goZone(ZONES[(i+d+ZONES.length)%ZONES.length].id);
+}
+
+/* ============ HUD ============ */
+const topleft=$('#topleft'), bottombar=$('#bottombar'), tourBtn=$('#tourBtn');
+const pinOf=id=>pinsEl.querySelector(`[data-z="${id}"]`);
+function buildStatic(){
+  const n=s=>ASSETS.filter(a=>a.estado===s).length;
+  $('#summary').innerHTML=PLANT.map(o=>`<span data-kt="${o.i}" class="${outOf(o)?'warn':''}"><small>${o.label}</small><b><b data-kv="${o.i}">${fmt(o.cur,o.d)}</b><em>${o.u}</em></b></span>`).join('');
+  bottombar.innerHTML=ZONES.map(z=>`<button class="chip" data-z="${z.id}"><i class="dot" style="background:${ESTADOS[worst(z.id)].c}"></i>${z.nombre}</button>`).join('');
+  bottombar.querySelectorAll('.chip').forEach(c=>{
+    c.addEventListener('click',()=>{ stopTour(); goZone(c.dataset.z); });
+    c.addEventListener('mouseenter',()=>pinOf(c.dataset.z)?.classList.add('hl'));
+    c.addEventListener('mouseleave',()=>pinOf(c.dataset.z)?.classList.remove('hl'));
+  });
+  const cnt=Object.keys(ESTADOS).map(s=>`<span title="${s}"><i class="dot" style="background:${ESTADOS[s].c}"></i>${n(s)}</span>`).join('');
+  topleft.innerHTML=`<span class="pill static aerial-only only-wide">${ASSETS.length} equipos <span class="cnt">${cnt}</span></span>
+    <button class="pill zone-only" id="backBtn">‹ Vista aérea</button>
+    <button class="pill icon zone-only" id="prevBtn" aria-label="Área anterior">←</button>
+    <button class="pill icon zone-only" id="nextBtn" aria-label="Área siguiente">→</button>`;
+  $('#backBtn').addEventListener('click',()=>goOverview());
+  $('#prevBtn').addEventListener('click',()=>step(-1));
+  $('#nextBtn').addEventListener('click',()=>step(1));
+  tourBtn.addEventListener('click',()=>tour?stopTour():runTour());
+  setTourBtn();
+}
+function updateHud(){
+  document.body.classList.toggle('zone',mode==='zone');
+  document.body.classList.toggle('aerial',mode==='aerial');
+  bottombar.querySelectorAll('.chip').forEach(c=>c.classList.toggle('active',c.dataset.z===currentZone));
+  bottombar.querySelector('.chip.active')?.scrollIntoView({inline:'center',block:'nearest',behavior:'smooth'});
+  zpanel.classList.remove('on');
+  $('#dNow').innerHTML=mode==='zone'?`<small>SOBREVOLANDO</small>${ZBY[currentZone].nombre}`:'<small>VISTA GENERAL</small>Planta Aguada Norte';
+  if(mode!=='zone') return;
+  const z=ZBY[currentZone], i=ZONES.indexOf(z), as=AZ(z.id);
+  const nov=as.filter(a=>SEV[a.estado]>0).length;
+  zpanel.innerHTML=`<div class="kick">Área ${String(i+1).padStart(2,'0')} / ${String(ZONES.length).padStart(2,'0')}</div>
+    <h2>${z.nombre}</h2><p class="desc">${z.desc} · ${as.length} equipos${nov?` · ${nov} con novedad`:''}</p>
+    <div class="sec">Indicadores del área <i class="live" title="En vivo"></i></div>
+    <div class="zk">${z.kpis.map(tile).join('')}</div>
+    <div class="sec eq">Equipos</div>
+    <ul>${as.map(a=>`<li><button data-a="${a.id}"><i class="dot" style="background:${ESTADOS[a.estado].c}"></i><span>${a.nombre}</span><em style="color:${ESTADOS[a.estado].c}">${a.estado}</em></button></li>`).join('')}</ul>`;
+  zpanel.querySelectorAll('li button').forEach(b=>{
+    const a=ASSETS.find(x=>x.id===b.dataset.a);
+    b.addEventListener('click',()=>{ stopTour(); openAsset(a); });
+    b.addEventListener('mouseenter',()=>pinsEl.querySelector(`[data-a="${a.id}"]`)?.classList.add('hl'));
+    b.addEventListener('mouseleave',()=>pinsEl.querySelector(`[data-a="${a.id}"]`)?.classList.remove('hl'));
+  });
+}
+
+/* ============ Ficha de equipo ============ */
+function openAsset(a){
+  if(currentZone!==a.st){ mode='zone'; currentZone=a.st; updateHud(); zpanel.classList.add('on'); }
+  showZoneHotspots(a.st);
+  selected=a;
+  pinsEl.querySelectorAll('.hs').forEach(h=>h.classList.toggle('sel',h.dataset.a===a.id));
+  focusAsset(a);
+  const c=ESTADOS[a.estado].c;
+  const histHtml=a.hist.slice(0,2).map(h=>`<div><time>${h[0]}</time><span>${h[1]}</span></div>`).join('');
+  card.innerHTML=`
+    <button class="close" aria-label="Cerrar ficha">✕</button>
+    <div class="head">
+      <div class="glyph" style="background:${c}">${a.g}</div>
+      <div class="tt"><h3>${a.nombre}</h3><p class="amb">${ZBY[a.st].nombre} · ${a.tipo}</p></div>
+      <span class="badge" style="background:${c}22;color:${c}"><i class="dot" style="background:${c}"></i>${a.estado}</span>
+    </div>
+    <div class="health"><div class="lbl"><span>Índice de salud</span><span>${a.salud}%</span></div>
+      <div class="bar"><i style="width:${a.salud}%;background:${a.salud>75?'var(--ok)':a.salud>45?'var(--warn)':'var(--bad)'}"></i></div></div>
+    <div class="sec">Indicadores en tiempo real <i class="live" title="En vivo"></i></div>
+    <div class="kpis">${a.kpis.map(tile).join('')}</div>
+    ${a.nota?`<div class="note">${a.nota}</div>`:''}
+    <div class="sec">Ficha técnica</div>
+    <div class="specs">
+      <div><span>Equipo / modelo</span><b>${a.marca}</b></div>
+      <div><span>TAG</span><b>${a.serie}</b></div>
+      <div><span>Criticidad</span><b>${a.criticidad}</b></div>
+      <div><span>Puesta en marcha</span><b>${a.instalado}</b></div>
+      <div><span>Última inspección</span><b>${a.ultInsp}</b></div>
+      <div class="hot"><span>Próximo mant.</span><b>${a.proxMant}</b></div>
+    </div>
+    <div class="hist">${histHtml}</div>`;
+  card.scrollTop=0;
+  card.classList.add('on'); document.body.classList.add('carded');
+  card.querySelector('.close').addEventListener('click',()=>closeCard());
+}
+/* El dron se acerca al equipo y lo deja a un costado de la ficha */
+function focusAsset(a){
+  const narrow=vw<760, z=Math.min(ZBY[a.st].zf||ZMAX,Math.max(ZBY[a.st].cam.z*1.45,3.4));
+  const sx=narrow?.5:.36, sy=narrow?.24:.46;
+  return fly({x:a.x+(.5-sx)*vw/(fw*z)*100, y:a.y+(.5-sy)*vh/(fh*z)*100, z},{dur:1500,hop:0});
+}
+function closeCard(silent){
+  if(!selected) return;
+  selected=null;
+  card.classList.remove('on'); document.body.classList.remove('carded');
+  pinsEl.querySelectorAll('.hs.sel').forEach(h=>h.classList.remove('sel'));
+  if(!silent&&mode==='zone') fly(camFor(ZBY[currentZone]),{dur:1300,hop:0}).then(ok=>{ if(ok) showZoneHotspots(currentZone); });
+}
+
+/* ============ Vuelo de dron automático ============ */
+let tour=false, tourTimer=0, wake=null;
+const sleep=ms=>new Promise(r=>{wake=r; tourTimer=setTimeout(r,ms);});
+/* Sigue el camino del gas: entrada → tratamiento → compresión → venta; termina mirando al yacimiento */
+const ROUTE=['slug','separacion','aminas','deshidratacion','dewpoint','compresion','medicion','energia','condensado','antorcha','pad'];
+function setTourBtn(){
+  tourBtn.classList.toggle('on',tour); tourBtn.setAttribute('aria-pressed',tour);
+  tourBtn.innerHTML=tour?'■ <span class="only-wide">Terminar vuelo</span>':'▶ <span class="only-wide">Vuelo en dron</span>';
+}
+function stopTour(){
+  if(!tour) return;
+  tour=false; clearTimeout(tourTimer); wake&&wake(); setTourBtn();
+  document.body.classList.remove('drone'); hoverAmp=1;
+}
+async function runTour(){
+  closeCard(true);
+  tour=true; setTourBtn(); document.body.classList.add('drone'); recT0=performance.now(); last=null; spd=0;
+  hoverAmp=1.6;
+  /* Despegue: sube y abre el plano antes de salir hacia el primer área */
+  await goOverview({dur:1800}); if(!tour) return;
+  for(const id of ROUTE){
+    const z=ZBY[id];
+    await goZone(id,{curve:easeSoft}); if(!tour) return;
+    /* Avance lento sobre el área, como un dron que se arrima filmando */
+    const drift={x:z.cam.x+(ROUTE.indexOf(id)%2?1.6:-1.6)/z.cam.z*2,y:z.cam.y-.8/z.cam.z*2,z:z.cam.z*1.1};
+    const w=[...AZ(id)].sort((a,b)=>SEV[b.estado]-SEV[a.estado])[0];
+    await fly(drift,{dur:3600,hop:0,bank:false,curve:t=>t}); if(!tour) return;
+    if(SEV[w.estado]>1&&id!=='pad'){
+      openAsset(w); await sleep(4300); if(!tour) return;
+      closeCard(true);
+    }
+  }
+  await goOverview({dur:2600}); if(!tour) return;
+  stopTour();
+}
+addEventListener('pointerdown',e=>{ if(tour&&!e.target.closest('#tourBtn')&&!e.target.closest('#card')) stopTour(); },true);
+
+/* ============ Interacción: arrastre, rueda, teclado, minimapa ============ */
+let drag=null, dragged=false;
+stage.addEventListener('pointerdown',e=>{
+  if(e.button>0) return;
+  drag={x:e.clientX,y:e.clientY,b:{...base}}; dragged=false;
+});
+addEventListener('pointermove',e=>{
+  if(!drag) return;
+  const dx=e.clientX-drag.x, dy=e.clientY-drag.y;
+  if(!dragged&&Math.hypot(dx,dy)>6){ dragged=true; stage.classList.add('grab'); if(flight) flight.done(false); document.body.classList.remove('flying'); drag.b={...base}; drag.x=e.clientX; drag.y=e.clientY; return; }
+  if(dragged) base=fit({...drag.b,x:drag.b.x-dx/(fw*base.z)*100,y:drag.b.y-dy/(fh*base.z)*100,r:0});
+});
+const endDrag=()=>{ drag=null; stage.classList.remove('grab'); setTimeout(()=>{dragged=false;},0); };
+addEventListener('pointerup',endDrag); addEventListener('pointercancel',endDrag);
+stage.addEventListener('wheel',e=>{
+  e.preventDefault(); stopTour();
+  if(flight){ flight.done(false); document.body.classList.remove('flying'); }
+  const nz=clamp(base.z*Math.exp(-e.deltaY*.0015),zMin(0),ZMAX), k=1/base.z-1/nz;
+  base=fit({x:base.x+(e.clientX-vw/2)/fw*100*k, y:base.y+(e.clientY-vh/2)/fh*100*k, z:nz, r:0});
+},{passive:false});
+const mini=$('#mini');
+function miniGo(e){
+  const r=mini.getBoundingClientRect();
+  stopTour(); fly({x:(e.clientX-r.left)/r.width*100,y:(e.clientY-r.top)/r.height*100,z:base.z},{hop:0});
+}
+mini.addEventListener('click',miniGo);
+mini.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); goOverview(); } });
+addEventListener('keydown',e=>{
+  if(e.key!=='Tab') stopTour();
+  if(e.key==='ArrowRight') mode==='zone'?step(1):goZone(ZONES[0].id);
+  if(e.key==='ArrowLeft') mode==='zone'?step(-1):goZone(ZONES[ZONES.length-1].id);
+  if(e.key==='Escape'){ if(selected) closeCard(); else if(mode==='zone') goOverview(); }
+});
+addEventListener('resize',()=>{ layout(); base=fit(base); });
+
+/* ============ Arranque: el dron baja la cámara del horizonte a la planta ============ */
+async function boot(){
+  busy=true;
+  layout(); buildPins(); buildStatic();
+  await $('#lo').decode().catch(()=>{});
+  const hi=$('#hi'); hi.onload=()=>hi.classList.add('on'); hi.src='img/planta/aerea.jpg';
+  base=fit({x:50,y:14,z:1.5,r:0}); cam={...base};
+  requestAnimationFrame(frame);
+  $('#intro').classList.add('gone');
+  document.body.classList.add('flying');
+  await fly(HOME,{dur:4600,hop:0,bank:false,curve:t=>1-Math.pow(1-t,3)});
+  document.body.classList.add('ready');
+  busy=false;
+}
+boot();
+</script>
+</body>
+</html>

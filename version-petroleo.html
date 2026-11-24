@@ -1,0 +1,695 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Yacimiento Aguada Norte</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap">
+<style>
+:root{
+  --bg:#0b0807; --fg:#f4f1ea; --muted:#a8a296;
+  --glass:rgba(14,11,10,.62); --glass-strong:rgba(14,11,10,.78); --glass-br:rgba(255,255,255,.14);
+  --accent:#ff9044; --ok:#3ddc97; --warn:#ffc24b; --bad:#ff6b5e; --maint:#5fb4ff;
+  --font-h:'Space Grotesk',system-ui,sans-serif; --font-b:'Inter',system-ui,sans-serif;
+  --ease:cubic-bezier(.6,0,.2,1);
+  color-scheme:dark;
+}
+html,body{height:100%;margin:0;}
+body{background:var(--bg);color:var(--fg);font-family:var(--font-b);overflow:hidden;
+  -webkit-font-smoothing:antialiased;-webkit-user-select:none;user-select:none;}
+button{font:inherit;color:inherit;}
+
+/* ---------- Escena: capas de imagen ---------- */
+#stage{position:fixed;inset:0;overflow:hidden;background:var(--bg);touch-action:none;cursor:grab;}
+#stage:active{cursor:grabbing;}
+.layer{position:absolute;inset:0;opacity:0;pointer-events:none;will-change:transform,opacity,filter;}
+.layer.front{pointer-events:auto;}
+.drift{position:absolute;inset:0;transform-origin:50% 50%;animation:kb 28s ease-in-out infinite alternate;}
+@keyframes kb{from{transform:scale(1.05);}to{transform:scale(1.11) translate(-.6%,-.4%);}}
+.foc{position:absolute;inset:0;transform-origin:0 0;}
+.par{position:absolute;inset:0;transition:transform .9s cubic-bezier(.2,.7,.2,1);}
+.frame{position:absolute;}
+.frame img{position:absolute;inset:0;width:100%;height:100%;display:block;-webkit-user-drag:none;}
+.pins{position:absolute;inset:0;transition:opacity .5s .1s;}
+.layer.busy .pins{opacity:0;pointer-events:none;transition:opacity .15s;}
+
+/* Pines de zona (vista aérea) */
+.zpin{position:absolute;transform:translate(-50%,-100%);display:flex;flex-direction:column;align-items:center;
+  background:none;border:0;padding:0;cursor:pointer;}
+.zpin .lab{display:flex;align-items:center;gap:7px;background:var(--glass);border:1px solid var(--glass-br);
+  border-radius:999px;padding:7px 13px;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  font-family:var(--font-h);font-weight:600;font-size:12.5px;white-space:nowrap;
+  transition:border-color .2s,transform .25s;box-shadow:0 6px 24px rgba(0,0,0,.35);}
+.zpin .lab small{font-family:var(--font-b);font-weight:400;font-size:10.5px;color:#d6cfc2;}
+.zpin.r .lab{transform:translateX(-38%);}
+.zpin .stem{width:1px;height:30px;background:linear-gradient(rgba(255,255,255,.85),rgba(255,255,255,.15));}
+.zpin .pt{width:11px;height:11px;border-radius:50%;background:var(--hsc);margin-bottom:-5.5px;
+  box-shadow:0 0 0 3px rgba(0,0,0,.28),0 0 16px 2px var(--hsc);position:relative;}
+.zpin .pt::after{content:"";position:absolute;inset:-6px;border-radius:50%;border:1.5px solid var(--hsc);
+  animation:pulse 2.6s ease-out infinite;}
+.zpin:hover .lab,.zpin.hl .lab{border-color:var(--accent);}
+.zpin.b{transform:translate(-50%,0);flex-direction:column-reverse;}
+.zpin.b .pt{margin:-5.5px 0 0;}
+.zpin.b .stem{background:linear-gradient(rgba(255,255,255,.15),rgba(255,255,255,.85));}
+.zpin:hover .lab,.zpin.hl .lab{transform:translateY(-3px);}
+.zpin.r:hover .lab,.zpin.r.hl .lab{transform:translate(-38%,-3px);}
+.zpin:focus-visible{outline:none;}
+.zpin:focus-visible .lab{outline:2px solid var(--accent);outline-offset:2px;}
+
+/* Hotspots de equipos (vista de zona) */
+.hs{position:absolute;width:42px;height:42px;margin:-21px 0 0 -21px;border-radius:50%;border:0;
+  background:transparent;cursor:pointer;padding:0;transform:scale(var(--k,1));
+  transition:transform 1.1s var(--ease);}
+.hs i{position:absolute;inset:13px;border-radius:50%;background:var(--hsc);
+  box-shadow:0 0 0 3px rgba(0,0,0,.3),0 0 16px 4px var(--hsc);transition:inset .2s;}
+.hs::before{content:"";position:absolute;inset:5px;border-radius:50%;border:1.5px solid var(--hsc);
+  animation:pulse 2.4s ease-out infinite;}
+.hs span{position:absolute;left:50%;bottom:calc(100% + 4px);transform:translateX(-50%);
+  background:var(--glass-strong);border:1px solid var(--glass-br);border-radius:8px;padding:5px 10px;
+  font-size:11.5px;white-space:nowrap;opacity:0;transition:opacity .2s;pointer-events:none;
+  backdrop-filter:blur(10px);}
+.hs:hover span,.hs.hl span,.hs.sel span,.hs:focus-visible span{opacity:1;}
+.hs:hover i,.hs.hl i,.hs.sel i{inset:10px;}
+.hs.sel::before{border-width:2px;animation-duration:1.4s;}
+.hs:focus-visible{outline:none;}
+@keyframes pulse{0%{transform:scale(.6);opacity:.9;}70%{transform:scale(1.6);opacity:0;}100%{opacity:0;}}
+
+/* ---------- Capas de cine ---------- */
+#vignette{position:fixed;inset:0;pointer-events:none;
+  background:radial-gradient(ellipse 75% 70% at 50% 45%,transparent 55%,rgba(8,5,3,.55) 100%),
+             linear-gradient(to bottom,rgba(8,5,3,.45),transparent 18%,transparent 72%,rgba(8,5,3,.6));}
+#grain{position:fixed;inset:-50%;pointer-events:none;opacity:.07;mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  animation:grain 1s steps(5) infinite;}
+@keyframes grain{0%{transform:translate(0,0);}20%{transform:translate(-3%,2%);}40%{transform:translate(2%,-3%);}
+  60%{transform:translate(-2%,-1%);}80%{transform:translate(3%,3%);}100%{transform:translate(0,0);}}
+#bars::before,#bars::after{content:"";position:fixed;left:0;right:0;height:0;background:#000;z-index:3;
+  pointer-events:none;transition:height .7s var(--ease);}
+#bars::before{top:0;} #bars::after{bottom:0;}
+body.cine #bars::before,body.cine #bars::after{height:6.5vh;}
+
+/* ---------- Intro ---------- */
+#intro{position:fixed;inset:0;z-index:20;background:var(--bg);display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:14px;transition:opacity 1s .2s;}
+#intro.gone{opacity:0;pointer-events:none;}
+#intro .t{font-family:var(--font-h);font-weight:700;font-size:22px;letter-spacing:.4px;}
+#intro .bar{width:160px;height:2px;background:rgba(255,255,255,.12);border-radius:2px;overflow:hidden;}
+#intro .bar i{display:block;height:100%;width:40%;background:var(--accent);animation:load 1.1s ease-in-out infinite;}
+@keyframes load{from{transform:translateX(-100%);}to{transform:translateX(250%);}}
+#intro small{color:var(--muted);font-size:12px;}
+
+/* ---------- HUD ---------- */
+#hud{position:fixed;inset:0;pointer-events:none;z-index:5;opacity:0;transition:opacity 1.2s;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));}
+body.ready #hud{opacity:1;}
+#hud > *{pointer-events:auto;}
+.pill{display:inline-flex;align-items:center;gap:8px;background:var(--glass);border:1px solid var(--glass-br);
+  border-radius:999px;padding:9px 16px;backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  font-size:13px;cursor:pointer;transition:border-color .2s,background .2s;white-space:nowrap;}
+.pill:hover{border-color:rgba(255,255,255,.42);}
+.pill:focus-visible,.chip:focus-visible,#zpanel button:focus-visible,#card .close:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+.pill.static{cursor:default;}
+.pill.icon{padding:9px 13px;}
+.pill.on{background:var(--accent);border-color:var(--accent);color:#14100a;font-weight:600;}
+.dot{width:8px;height:8px;border-radius:50%;flex:none;display:inline-block;}
+#topleft{position:absolute;top:max(14px,env(safe-area-inset-top,0px));left:max(16px,env(safe-area-inset-left,0px));
+  display:flex;gap:8px;align-items:center;}
+#topright{position:absolute;top:max(14px,env(safe-area-inset-top,0px));right:max(16px,env(safe-area-inset-right,0px));
+  display:flex;gap:8px;}
+#topcenter{position:absolute;top:max(14px,env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);
+  display:flex;flex-direction:column;align-items:center;gap:6px;pointer-events:none;transition:opacity .4s;}
+#topcenter .t{font-family:var(--font-h);font-weight:700;font-size:clamp(18px,2.6vw,25px);letter-spacing:.3px;
+  text-shadow:0 2px 18px rgba(0,0,0,.85);white-space:nowrap;}
+#topcenter .s{display:flex;gap:12px;font-size:12px;color:#ece4d6;text-shadow:0 1px 10px rgba(0,0,0,.9);white-space:nowrap;}
+#topcenter .s span{display:inline-flex;align-items:center;gap:5px;}
+#bottombar{position:absolute;bottom:max(16px,env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);
+  display:flex;gap:7px;max-width:calc(100vw - 24px);overflow-x:auto;padding:4px;scrollbar-width:none;
+  transition:opacity .3s;touch-action:pan-x;}
+#bottombar::-webkit-scrollbar{display:none;}
+.chip{flex:none;background:var(--glass);border:1px solid var(--glass-br);border-radius:999px;padding:8px 14px;
+  font-size:12.5px;cursor:pointer;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  display:inline-flex;align-items:center;gap:7px;transition:border-color .15s,background .15s;}
+.chip:hover{border-color:rgba(255,255,255,.42);}
+.chip.active{background:var(--accent);border-color:var(--accent);color:#14100a;font-weight:600;}
+.chip.active .dot{background:#14100a !important;}
+#help{position:absolute;bottom:max(66px,calc(env(safe-area-inset-bottom,0px) + 54px));left:50%;transform:translateX(-50%);
+  font-size:11.5px;color:#e6ddcf;text-shadow:0 1px 8px rgba(0,0,0,.95);pointer-events:none;white-space:nowrap;
+  transition:opacity .4s;}
+body.zone #help{opacity:0;}
+
+/* Panel de zona (lower third) */
+#zpanel{position:absolute;left:max(16px,env(safe-area-inset-left,0px));bottom:max(72px,calc(env(safe-area-inset-bottom,0px) + 60px));
+  width:300px;box-sizing:border-box;background:var(--glass);border:1px solid var(--glass-br);border-radius:18px;
+  backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);padding:16px 16px 10px;
+  opacity:0;transform:translateY(18px);pointer-events:none;transition:opacity .5s,transform .6s var(--ease);}
+#zpanel.on{opacity:1;transform:none;pointer-events:auto;}
+#zpanel .kick{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:600;}
+#zpanel h2{margin:4px 0 2px;font-family:var(--font-h);font-size:21px;font-weight:700;line-height:1.15;}
+#zpanel .desc{margin:0 0 10px;font-size:12.5px;color:var(--muted);}
+#zpanel ul{list-style:none;margin:0;padding:0;}
+#zpanel li button{width:100%;display:flex;align-items:center;gap:9px;background:none;border:0;
+  border-top:1px solid rgba(255,255,255,.07);padding:8px 2px;cursor:pointer;text-align:left;font-size:12.5px;}
+#zpanel li button:hover span{color:#fff;}
+#zpanel li span{flex:1;min-width:0;color:#e2dbcf;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#zpanel li em{font-style:normal;font-size:11px;font-weight:600;}
+
+/* Ficha de equipo */
+#card{position:absolute;right:max(16px,env(safe-area-inset-right,0px));bottom:max(72px,calc(env(safe-area-inset-bottom,0px) + 60px));
+  width:min(460px,calc(100vw - 32px));box-sizing:border-box;background:var(--glass-strong);border:1px solid var(--glass-br);
+  border-radius:18px;backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);padding:16px 18px;
+  opacity:0;transform:translateY(22px);pointer-events:none;transition:opacity .35s,transform .45s var(--ease);z-index:6;}
+#card.on{opacity:1;pointer-events:auto;transform:none;}
+#card .head{display:flex;align-items:center;gap:12px;padding-right:22px;}
+.glyph{width:44px;height:44px;border-radius:12px;flex:none;display:flex;align-items:center;justify-content:center;
+  font-family:var(--font-h);font-weight:700;font-size:14px;color:#0b0d10;}
+#card .tt{flex:1;min-width:0;}
+#card h3{margin:0;font-family:var(--font-h);font-size:16.5px;font-weight:600;}
+#card .amb{margin:1px 0 0;font-size:12px;color:var(--muted);}
+.badge{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:4px 11px;font-size:11.5px;font-weight:600;flex:none;}
+#card .close{position:absolute;top:10px;right:12px;background:none;border:0;color:var(--muted);font-size:19px;cursor:pointer;padding:4px;line-height:1;}
+#card .close:hover{color:var(--fg);}
+.health{margin:13px 0 12px;}
+.health .lbl{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:5px;}
+.health .bar{height:6px;border-radius:4px;background:rgba(255,255,255,.1);overflow:hidden;}
+.health .bar i{display:block;height:100%;border-radius:4px;}
+#card .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;}
+#card .cell{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.07);border-radius:10px;padding:7px 9px;min-width:0;}
+#card .cell span{display:block;font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px;}
+#card .cell b{font-size:12px;font-weight:500;word-break:break-word;}
+#card .cell.hot b{color:var(--accent);}
+.note{margin:11px 0 0;padding:9px 12px;border-left:3px solid var(--warn);background:rgba(255,194,75,.09);
+  border-radius:0 9px 9px 0;font-size:12.5px;line-height:1.45;}
+.hist{margin:12px 0 0;font-size:12px;}
+.hist div{display:flex;gap:10px;padding:5px 0;border-top:1px solid rgba(255,255,255,.07);}
+.hist time{color:var(--muted);font-variant-numeric:tabular-nums;flex:none;}
+
+.only-wide{display:inline;}
+body.aerial .zone-only{display:none !important;}
+body.zone .aerial-only{display:none !important;}
+
+@media (max-width:760px){
+  .only-wide{display:none;}
+  #help{display:none;}
+  body.zone #topcenter{opacity:0;}
+  #topcenter .s em{display:none;}
+  #zpanel{width:auto;right:max(16px,env(safe-area-inset-right,0px));padding:12px 14px;}
+  #zpanel ul,#zpanel .desc{display:none;}
+  #zpanel h2{font-size:18px;}
+  #card{right:16px;left:16px;width:auto;bottom:max(16px,env(safe-area-inset-bottom,0px));}
+  #card .grid{grid-template-columns:repeat(2,1fr);}
+  body.carded #zpanel,body.carded #bottombar{opacity:0;pointer-events:none;}
+}
+@media (prefers-reduced-motion:reduce){
+  .drift,#grain,.hs::before,.zpin .pt::after{animation:none;}
+}
+</style>
+</head>
+<body class="aerial">
+<div id="stage" aria-label="Vista del yacimiento"></div>
+<div id="vignette"></div>
+<div id="grain"></div>
+<div id="bars"></div>
+
+<div id="hud">
+  <div id="topleft"></div>
+  <div id="topcenter">
+    <div class="t">Yacimiento Aguada Norte</div>
+    <div class="s" id="summary"></div>
+  </div>
+  <div id="topright"><button class="pill" id="tourBtn" aria-pressed="false"></button></div>
+  <div id="help">Tocá una instalación para volar hacia ella · arrastrá para recorrer</div>
+  <div id="zpanel" aria-live="polite"></div>
+  <div id="bottombar"></div>
+  <div id="card" role="dialog" aria-label="Ficha de equipo"></div>
+</div>
+
+<div id="intro"><div class="t">Yacimiento Aguada Norte</div><div class="bar"><i></i></div><small>Cargando gemelo digital…</small></div>
+
+<script>
+'use strict';
+/* ============ Modelo de activos ============ */
+const ESTADOS={
+  'Operativo':{c:'#3ddc97'},'Alerta':{c:'#ffc24b'},
+  'Mantenimiento':{c:'#5fb4ff'},'Fuera de servicio':{c:'#ff6b5e'}};
+const SEV={'Operativo':0,'Mantenimiento':1,'Alerta':2,'Fuera de servicio':3};
+/* x,y: posición de la zona en la imagen aérea (% del ancho/alto) */
+const ZONES=[
+  {id:'pozos',      nombre:'Pozo AN-114 · AIB',     x:21,  y:68, desc:'Extracción por bombeo mecánico'},
+  {id:'wellhead',   nombre:'Boca de pozo AN-115',   x:35,  y:74, desc:'Control de pozo y conducción'},
+  {id:'perforacion',nombre:'Equipo de perforación', x:19,  y:25, desc:'Campaña de perforación 2026'},
+  {id:'ducto',      nombre:'Ducto a batería',       x:39,  y:61, desc:'Conducción de superficie · 6"'},
+  {id:'bateria',    nombre:'Batería · separadores', x:45,  y:46, desc:'Separación trifásica de producción'},
+  {id:'compresion', nombre:'Planta compresora',     x:75,  y:31, desc:'Compresión de gas · 1.480 HP'},
+  {id:'colector',   nombre:'Colector auxiliar',     x:52,  y:57, desc:'Sistema viejo · fuera de operación'},
+  {id:'tanques',    nombre:'Batería de tanques',    x:85,  y:57, desc:'Almacenaje y medición fiscal'},
+  {id:'antorcha',   nombre:'Antorcha',              x:95.5,y:18, desc:'Venteo y seguridad'},
+];
+/* hx,hy: posición del equipo en la imagen de su zona (%) */
+const ASSETS=[
+  {id:'aib',nombre:'Aparato de bombeo (AIB)',tipo:'Extracción',st:'pozos',hx:58.5,hy:26,
+   estado:'Operativo',salud:87,marca:'Lufkin C-456D',serie:'TAG AN-114-AIB',criticidad:'Alta',
+   instalado:'2016',ultInsp:'03/11/2026',proxMant:'03/05/2027',nota:'',
+   hist:[['03/11/2026','Control de carrera y balanceo: OK'],['06/2026','Cambio de correas']]},
+  {id:'motor',nombre:'Motor y reductor',tipo:'Extracción',st:'pozos',hx:31,hy:54,
+   estado:'Operativo',salud:84,marca:'WEG 50 HP · reductor Lufkin',serie:'TAG AN-114-MR',criticidad:'Alta',
+   instalado:'2016',ultInsp:'03/11/2026',proxMant:'03/05/2027',nota:'',
+   hist:[['03/11/2026','Engrase y medición de vibraciones']]},
+  {id:'boca',nombre:'Boca de pozo y prensaestopas',tipo:'Wellhead',st:'pozos',hx:74,hy:62,
+   estado:'Alerta',salud:52,marca:'FMC 3000 psi',serie:'TAG AN-114-WH',criticidad:'Alta',
+   instalado:'2016',ultInsp:'18/11/2026',proxMant:'26/11/2026',
+   nota:'Pérdida leve por prensaestopas. Recambio de empaques programado con equipo de pulling.',
+   hist:[['18/11/2026','Goteo en prensaestopas · OT generada'],['08/2026','Ajuste de empaquetadura']]},
+  {id:'tablero-pozo',nombre:'Tablero y variador',tipo:'Eléctrico',st:'pozos',hx:17,hy:70,
+   estado:'Operativo',salud:91,marca:'ABB ACS880',serie:'TAG AN-114-VSD',criticidad:'Media',
+   instalado:'2019',ultInsp:'09/2026',proxMant:'09/2027',nota:'',
+   hist:[['09/2026','Termografía de bornes: sin puntos calientes']]},
+  {id:'arbol',nombre:'Árbol de válvulas',tipo:'Wellhead',st:'wellhead',hx:42,hy:28,
+   estado:'Operativo',salud:92,marca:'Cameron 5000 psi',serie:'TAG AN-115-XT',criticidad:'Alta',
+   instalado:'2021',ultInsp:'10/2026',proxMant:'10/2027',nota:'',
+   hist:[['10/2026','Prueba de hermeticidad de válvulas: OK']]},
+  {id:'maestra',nombre:'Válvula maestra',tipo:'Wellhead',st:'wellhead',hx:48,hy:69,
+   estado:'Operativo',salud:88,marca:'Esclusa manual 5 1/8"',serie:'TAG AN-115-VM',criticidad:'Alta',
+   instalado:'2021',ultInsp:'10/2026',proxMant:'10/2027',nota:'',
+   hist:[['10/2026','Ciclado y engrase de vástago']]},
+  {id:'flowline',nombre:'Línea de conducción',tipo:'Ductos',st:'wellhead',hx:80,hy:67,
+   estado:'Operativo',salud:85,marca:'4" · 740 psi op.',serie:'TAG AN-115-FL',criticidad:'Media',
+   instalado:'2021',ultInsp:'06/2026',proxMant:'06/2027',nota:'',
+   hist:[['06/2026','Medición de espesores por UT: OK']]},
+  {id:'instrum',nombre:'Instrumentación de boca',tipo:'Instrumentación',st:'wellhead',hx:31,hy:46,
+   estado:'Alerta',salud:63,marca:'Transmisores WIKA',serie:'TAG AN-115-PI',criticidad:'Media',
+   instalado:'2021',ultInsp:'18/11/2026',proxMant:'29/11/2026',
+   nota:'Calibración de transmisor de presión vencida. Contraste programado.',
+   hist:[['18/11/2026','Vence certificado de calibración · OT generada']]},
+  {id:'mastil',nombre:'Mástil de perforación',tipo:'Perforación',st:'perforacion',hx:53.5,hy:12,
+   estado:'Operativo',salud:88,marca:'Drillmec 1500 HP',serie:'EQ DLS-42',criticidad:'Alta',
+   instalado:'Campaña 2026',ultInsp:'15/11/2026',proxMant:'Fin de pozo',nota:'',
+   hist:[['15/11/2026','Inspección de estructura y piolas: OK']]},
+  {id:'topdrive',nombre:'Top drive',tipo:'Perforación',st:'perforacion',hx:55,hy:39,
+   estado:'Mantenimiento',salud:70,marca:'NOV TDS-11SA',serie:'EQ DLS-42-TD',criticidad:'Alta',
+   instalado:'Campaña 2026',ultInsp:'20/11/2026',proxMant:'En curso',
+   nota:'Recambio de grampas del elevador en ventana de mantenimiento programada.',
+   hist:[['20/11/2026','Desgaste de grampas sobre tolerancia · OT abierta']]},
+  {id:'subestructura',nombre:'Subestructura y piso',tipo:'Perforación',st:'perforacion',hx:50,hy:67,
+   estado:'Operativo',salud:86,marca:'Cantilever 25 ft',serie:'EQ DLS-42-SB',criticidad:'Media',
+   instalado:'Campaña 2026',ultInsp:'15/11/2026',proxMant:'Fin de pozo',nota:'',
+   hist:[['15/11/2026','Control de niveles y anclajes']]},
+  {id:'piletas',nombre:'Piletas y bombas de lodo',tipo:'Perforación',st:'perforacion',hx:31,hy:61,
+   estado:'Operativo',salud:82,marca:'2 × triplex 1300 HP',serie:'EQ DLS-42-MP',criticidad:'Alta',
+   instalado:'Campaña 2026',ultInsp:'12/11/2026',proxMant:'01/12/2026',nota:'',
+   hist:[['12/11/2026','Cambio de camisas en bomba 2']]},
+  {id:'tramo',nombre:'Cañería de superficie 6"',tipo:'Ductos',st:'ducto',hx:35,hy:48,
+   estado:'Operativo',salud:86,marca:'API 5L X52',serie:'TAG DT-06',criticidad:'Alta',
+   instalado:'2019',ultInsp:'05/2026',proxMant:'05/2027',nota:'',
+   hist:[['05/2026','Relevamiento de trazas y venteos']]},
+  {id:'union',nombre:'Trampa de scraper',tipo:'Integridad',st:'ducto',hx:80,hy:57,
+   estado:'Operativo',salud:80,marca:'Lanzador 6" bridado',serie:'TAG DT-06-PC',criticidad:'Media',
+   instalado:'2019',ultInsp:'09/2026',proxMant:'03/2027',nota:'',
+   hist:[['09/2026','Corrida de scraper de limpieza']]},
+  {id:'soportes',nombre:'Soportes y cruces',tipo:'Integridad',st:'ducto',hx:48.5,hy:64,
+   estado:'Mantenimiento',salud:72,marca:'Apoyos H',serie:'TAG DT-06-SP',criticidad:'Baja',
+   instalado:'2019',ultInsp:'11/2026',proxMant:'En curso',
+   nota:'Recambio de apoyos deteriorados en el tramo de la loma.',
+   hist:[['11/2026','4 apoyos vencidos · OT abierta']]},
+  {id:'sep1',nombre:'Separador trifásico V-201',tipo:'Separación',st:'bateria',hx:53,hy:44,
+   estado:'Operativo',salud:84,marca:'Horizontal 48" × 15 ft',serie:'TAG BT-V201',criticidad:'Alta',
+   instalado:'2018',ultInsp:'08/2026',proxMant:'08/2027',nota:'',
+   hist:[['08/2026','Prueba de PSV y control de niveles']]},
+  {id:'manifold',nombre:'Manifold de producción',tipo:'Colector',st:'bateria',hx:21,hy:62,
+   estado:'Operativo',salud:88,marca:'8 bocas · testigo',serie:'TAG BT-MF01',criticidad:'Alta',
+   instalado:'2018',ultInsp:'10/2026',proxMant:'10/2027',nota:'',
+   hist:[['10/2026','Cambio de asientos en válvula de pozo 3']]},
+  {id:'tkcampo',nombre:'Tanque de campo',tipo:'Almacenaje',st:'bateria',hx:87.5,hy:57,
+   estado:'Mantenimiento',salud:68,marca:'400 m³ · techo cónico',serie:'TAG BT-TK05',criticidad:'Media',
+   instalado:'2012',ultInsp:'11/2026',proxMant:'En curso',
+   nota:'Recambio de venteo y medición de espesores de virolas.',
+   hist:[['11/2026','Campaña de espesores en curso']]},
+  {id:'compresor',nombre:'Compresor reciprocante K-201',tipo:'Compresión',st:'compresion',hx:52,hy:51,
+   estado:'Alerta',salud:58,marca:'Ariel JGK/4 · 1.480 HP',serie:'TAG PC-K201',criticidad:'Alta',
+   instalado:'2018',ultInsp:'19/11/2026',proxMant:'01/12/2026',
+   nota:'Vibración elevada en cilindro 3 (7,2 mm/s). Se programa recambio de válvulas.',
+   hist:[['19/11/2026','Vibración sobre umbral en C3'],['07/2026','Cambio de aros C1']]},
+  {id:'aero',nombre:'Aeroenfriadores',tipo:'Compresión',st:'compresion',hx:30,hy:35,
+   estado:'Operativo',salud:83,marca:'Hudson 3 celdas',serie:'TAG PC-AE01',criticidad:'Media',
+   instalado:'2018',ultInsp:'10/2026',proxMant:'04/2027',nota:'',
+   hist:[['10/2026','Limpieza de mallas y control de aspas']]},
+  {id:'scrubber',nombre:'Scrubber de entrada',tipo:'Separación',st:'compresion',hx:84,hy:49,
+   estado:'Operativo',salud:89,marca:'V-110 · 60 psi',serie:'TAG PC-V110',criticidad:'Media',
+   instalado:'2018',ultInsp:'08/2026',proxMant:'08/2027',nota:'',
+   hist:[['08/2026','Drenaje y prueba de válvula de seguridad']]},
+  {id:'esclusas',nombre:'Válvulas esclusas',tipo:'Colector',st:'colector',hx:75,hy:40,
+   estado:'Fuera de servicio',salud:25,marca:'Esclusas 10" bridadas',serie:'TAG CX-02-VE',criticidad:'Baja',
+   instalado:'1987',ultInsp:'04/2026',proxMant:'A desafectar',
+   nota:'Colector del sistema viejo, fuera de operación. Pendiente desmontaje y disposición.',
+   hist:[['04/2026','Corrosión avanzada, sin presión'],['2019','Aislado del proceso']]},
+  {id:'cuerpo',nombre:'Colector principal',tipo:'Colector',st:'colector',hx:35,hy:49,
+   estado:'Fuera de servicio',salud:30,marca:'Cañería 16"',serie:'TAG CX-02',criticidad:'Baja',
+   instalado:'1987',ultInsp:'04/2026',proxMant:'A desafectar',nota:'',
+   hist:[['04/2026','Relevamiento para plan de abandono']]},
+  {id:'tk101',nombre:'Tanque TK-101',tipo:'Almacenaje',st:'tanques',hx:39.5,hy:40,
+   estado:'Operativo',salud:90,marca:'API 650 · 5.000 m³',serie:'TAG BT-TK101',criticidad:'Alta',
+   instalado:'2014',ultInsp:'05/2026',proxMant:'05/2029',nota:'',
+   hist:[['05/2026','Inspección API 653 externa: sin hallazgos']]},
+  {id:'tk409',nombre:'Tanque TK-409',tipo:'Almacenaje',st:'tanques',hx:80,hy:49,
+   estado:'Mantenimiento',salud:66,marca:'API 650 · 3.000 m³',serie:'TAG BT-TK409',criticidad:'Media',
+   instalado:'2010',ultInsp:'11/2026',proxMant:'En curso',
+   nota:'Medición de espesores y recambio de sello en curso.',
+   hist:[['11/2026','Campaña de espesores en curso'],['2024','Pintura exterior']]},
+  {id:'bomba-transf',nombre:'Bomba de transferencia',tipo:'Bombeo',st:'tanques',hx:18,hy:69,
+   estado:'Operativo',salud:85,marca:'Flowserve 3x4 · 75 HP',serie:'TAG BT-P201',criticidad:'Media',
+   instalado:'2017',ultInsp:'09/2026',proxMant:'03/2027',nota:'',
+   hist:[['09/2026','Cambio de sello mecánico y alineación']]},
+  {id:'fiscal',nombre:'Puente de medición fiscal',tipo:'Medición',st:'tanques',hx:46.5,hy:72,
+   estado:'Operativo',salud:88,marca:'Coriolis 4"',serie:'TAG BT-FM01',criticidad:'Alta',
+   instalado:'2019',ultInsp:'10/2026',proxMant:'10/2027',nota:'',
+   hist:[['10/2026','Contraste de medidor fiscal: desvío 0,08%']]},
+  {id:'tea',nombre:'Tea de antorcha',tipo:'Venteo y seguridad',st:'antorcha',hx:58,hy:53,
+   estado:'Operativo',salud:82,marca:'Zeeco 24" · 30 m',serie:'TAG FL-01',criticidad:'Alta',
+   instalado:'2015',ultInsp:'07/2026',proxMant:'07/2027',nota:'',
+   hist:[['07/2026','Inspección con dron: tip en condición']]},
+  {id:'piloto',nombre:'Piloto e ignición',tipo:'Venteo y seguridad',st:'antorcha',hx:58.5,hy:21,
+   estado:'Alerta',salud:60,marca:'Ignición FFG · 3 pilotos',serie:'TAG FL-01-PI',criticidad:'Alta',
+   instalado:'2015',ultInsp:'20/11/2026',proxMant:'28/11/2026',
+   nota:'Termocupla del piloto 2 sin señal. Verificación y recambio programados.',
+   hist:[['20/11/2026','Pérdida de señal TC piloto 2 · OT generada']]},
+  {id:'kodrum',nombre:'KO Drum',tipo:'Venteo y seguridad',st:'antorcha',hx:32.5,hy:65,
+   estado:'Operativo',salud:86,marca:'Separador de líquidos V-401',serie:'TAG FL-01-KO',criticidad:'Media',
+   instalado:'2015',ultInsp:'07/2026',proxMant:'07/2027',nota:'',
+   hist:[['07/2026','Drenaje y prueba de alarma de nivel']]},
+];
+const GLYPH={aib:'AB',motor:'MR',boca:'WH','tablero-pozo':'VS',arbol:'XT',maestra:'VM',
+  flowline:'FL',instrum:'PI',mastil:'MP',topdrive:'TD',subestructura:'SB',piletas:'BL',
+  tramo:'DT',union:'TS',soportes:'SP',sep1:'SE',manifold:'MF',tkcampo:'TC',
+  compresor:'K2',aero:'AE',scrubber:'SC',esclusas:'VE',cuerpo:'CX',
+  tk101:'TK',tk409:'TK','bomba-transf':'BT',fiscal:'FM',tea:'FL',piloto:'PI',kodrum:'KO'};
+
+const ZBY=Object.fromEntries(ZONES.map(z=>[z.id,z]));
+const AZ=id=>ASSETS.filter(a=>a.st===id);
+const worst=id=>AZ(id).reduce((w,a)=>SEV[a.estado]>SEV[w]?a.estado:w,'Operativo');
+const imgOf=v=>v.type==='aerial'?'img/v1-petroleo/aerea.jpg':`img/v1-petroleo/${v.id}.jpg`;
+
+/* ============ Motor de capas ============ */
+const $=s=>document.querySelector(s);
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const RM=matchMedia('(prefers-reduced-motion: reduce)').matches;
+const EASE='cubic-bezier(.6,0,.2,1)';
+const AR=2400/1358;
+const stage=$('#stage'), card=$('#card'), zpanel=$('#zpanel');
+let vw=0,vh=0,fw=0,fh=0;
+let mode='aerial', currentZone=null, selected=null, busy=false;
+
+function mkLayer(){
+  const el=document.createElement('div'); el.className='layer';
+  el.innerHTML='<div class="drift"><div class="foc"><div class="par"><div class="frame">'+
+    '<img alt="" draggable="false"><div class="pins"></div></div></div></div></div>';
+  stage.appendChild(el);
+  return {el,drift:el.querySelector('.drift'),foc:el.querySelector('.foc'),par:el.querySelector('.par'),
+    frame:el.querySelector('.frame'),img:el.querySelector('img'),pins:el.querySelector('.pins'),px:0,py:0,view:null};
+}
+const L=[mkLayer(),mkLayer()]; let front=0;
+const F=()=>L[front];
+
+function layout(){
+  vw=innerWidth; vh=innerHeight;
+  if(vw/vh>AR){fw=vw;fh=vw/AR;} else {fh=vh;fw=vh*AR;}
+  L.forEach(place);
+  if(selected) focusAsset(selected,true);
+}
+function place(l){
+  const mx=(fw-vw)/2, my=(fh-vh)/2;
+  l.px=clamp(l.px,-mx,mx); l.py=clamp(l.py,-my,my);
+  const s=l.frame.style;
+  s.width=fw+'px'; s.height=fh+'px';
+  s.left=(vw-fw)/2+l.px+'px'; s.top=(vh-fh)/2+l.py+'px';
+}
+function panTo(l,x,y){ l.px=fw*(.5-x/100); l.py=fh*(.5-y/100); place(l); }
+
+function setView(l,view){
+  l.view=view;
+  l.img.src=imgOf(view);
+  l.img.alt=view.type==='aerial'?'Vista aérea del yacimiento':ZBY[view.id].nombre;
+  l.pins.innerHTML=''; l.pins.style.removeProperty('--k');
+  if(view.type==='aerial'){
+    ZONES.forEach(z=>{
+      const c=ESTADOS[worst(z.id)].c, b=document.createElement('button');
+      b.className='zpin'+(z.x>86?' r':'')+(z.y<22?' b':''); b.dataset.z=z.id;
+      b.style.left=z.x+'%'; b.style.top=z.y+'%'; b.style.setProperty('--hsc',c);
+      b.setAttribute('aria-label',`Volar a ${z.nombre}`);
+      b.innerHTML=`<span class="lab"><i class="dot" style="background:${c}"></i>${z.nombre}<small>${AZ(z.id).length} eq.</small></span><span class="stem"></span><span class="pt"></span>`;
+      b.addEventListener('click',()=>goZone(z.id));
+      l.pins.appendChild(b);
+    });
+  } else {
+    AZ(view.id).forEach(a=>{
+      const b=document.createElement('button');
+      b.className='hs'; b.dataset.a=a.id;
+      b.style.left=a.hx+'%'; b.style.top=a.hy+'%'; b.style.setProperty('--hsc',ESTADOS[a.estado].c);
+      b.setAttribute('aria-label',`${a.nombre} · ${a.estado}`);
+      b.innerHTML=`<i></i><span>${a.nombre}</span>`;
+      b.addEventListener('click',()=>openAsset(a));
+      l.pins.appendChild(b);
+    });
+  }
+  l.foc.style.transition='none'; l.foc.style.transform='';
+  l.drift.style.animation='none'; void l.drift.offsetWidth; l.drift.style.animation='';
+}
+function pinCenter(l,sel){
+  const r=l.pins.querySelector(sel).getBoundingClientRect();
+  return [r.left+r.width/2, r.top+r.height/2];
+}
+function zoneCenter(id){
+  const as=AZ(id);
+  return [as.reduce((s,a)=>s+a.hx,0)/as.length, as.reduce((s,a)=>s+a.hy,0)/as.length];
+}
+const play=(el,kf,dur,easing=EASE)=>el.animate(kf,{duration:dur,easing,fill:'forwards'}).finished.catch(()=>{});
+
+/* Transición entre niveles: 'in' = vuelo de la aérea a una zona, 'out' = regreso a la aérea */
+async function swap(kind,view,zid,dur){
+  busy=true; document.body.classList.add('cine');
+  const from=F(), to=L[1-front], cx=vw/2, cy=vh/2;
+  let origin=kind==='in'?pinCenter(from,`[data-z="${zid}"] .pt`):null;
+  setView(to,view);
+  if(kind==='in') panTo(to,...zoneCenter(zid)); else panTo(to,ZBY[zid].x,ZBY[zid].y);
+  await to.img.decode().catch(()=>{});
+  if(kind==='out') origin=pinCenter(to,`[data-z="${zid}"] .pt`);
+  from.el.classList.add('busy'); to.el.classList.add('busy');
+  const [px,py]=origin, fly=`translate(${cx-px}px,${cy-py}px) scale(3.2)`;
+  let a,b;
+  if(RM){
+    from.el.style.zIndex=1; to.el.style.zIndex=2;
+    a=Promise.resolve(); b=play(to.el,[{opacity:0},{opacity:1}],380,'ease');
+  } else if(kind==='in'){
+    from.el.style.zIndex=2; to.el.style.zIndex=1;
+    from.el.style.transformOrigin=`${px}px ${py}px`; to.el.style.transformOrigin='50% 50%';
+    a=play(from.el,[{transform:'translate(0,0) scale(1)',opacity:1,filter:'blur(0px)'},{opacity:1,offset:.5},
+                    {transform:fly,opacity:0,filter:'blur(8px)'}],dur);
+    b=play(to.el,[{transform:'scale(.92)',opacity:1,filter:'blur(10px)'},{transform:'scale(1)',opacity:1,filter:'blur(0px)'}],dur);
+  } else {
+    from.el.style.zIndex=1; to.el.style.zIndex=2;
+    to.el.style.transformOrigin=`${px}px ${py}px`; from.el.style.transformOrigin='50% 50%';
+    b=play(to.el,[{transform:fly,opacity:0,filter:'blur(8px)'},{opacity:1,offset:.45},
+                  {transform:'translate(0,0) scale(1)',opacity:1,filter:'blur(0px)'}],dur);
+    a=play(from.el,[{transform:'scale(1)',filter:'blur(0px)'},{transform:'scale(.95)',filter:'blur(8px)'}],dur);
+  }
+  await Promise.all([a,b]);
+  [from,to].forEach(l=>l.el.getAnimations().forEach(x=>x.cancel()));
+  from.el.style.opacity='0'; from.el.style.zIndex=0; from.el.classList.remove('front');
+  from.par.style.transform='';
+  to.el.style.opacity='1'; to.el.style.zIndex=1; to.el.classList.add('front');
+  front=1-front;
+  to.el.classList.remove('busy'); from.el.classList.remove('busy');
+  document.body.classList.remove('cine');
+  busy=false;
+}
+
+/* ============ Navegación ============ */
+async function goZone(id){
+  if(busy||(mode==='zone'&&currentZone===id)) return;
+  closeCard();
+  if(mode==='zone') await goOverview(1100);
+  mode='zone'; currentZone=id; updateHud();
+  await swap('in',{type:'zone',id},id,1700);
+  zpanel.classList.add('on');
+}
+async function goOverview(dur=1600){
+  if(busy||mode==='aerial') return;
+  closeCard();
+  const zid=currentZone; mode='aerial'; currentZone=null; updateHud();
+  await swap('out',{type:'aerial'},zid,dur);
+}
+function step(d){
+  const i=ZONES.findIndex(z=>z.id===currentZone);
+  const n=ZONES[(i+d+ZONES.length)%ZONES.length];
+  goZone(n.id);
+}
+
+/* ============ HUD ============ */
+const topleft=$('#topleft'), bottombar=$('#bottombar'), tourBtn=$('#tourBtn');
+function buildStatic(){
+  const n=s=>ASSETS.filter(a=>a.estado===s).length;
+  $('#summary').innerHTML=[['Operativo','operativos'],['Alerta','en alerta'],['Mantenimiento','en mant.'],['Fuera de servicio','fuera de serv.']]
+    .map(([s,t])=>`<span title="${s}"><i class="dot" style="background:${ESTADOS[s].c}"></i>${n(s)} <em>${t}</em></span>`).join('');
+  bottombar.innerHTML=ZONES.map(z=>`<button class="chip" data-z="${z.id}"><i class="dot" style="background:${ESTADOS[worst(z.id)].c}"></i>${z.nombre}</button>`).join('');
+  bottombar.querySelectorAll('.chip').forEach(c=>{
+    c.addEventListener('click',()=>goZone(c.dataset.z));
+    c.addEventListener('mouseenter',()=>F().pins.querySelector(`[data-z="${c.dataset.z}"]`)?.classList.add('hl'));
+    c.addEventListener('mouseleave',()=>F().pins.querySelector(`[data-z="${c.dataset.z}"]`)?.classList.remove('hl'));
+  });
+  topleft.innerHTML=`<span class="pill static aerial-only only-wide"><i class="dot" style="background:var(--accent)"></i>Gemelo digital · demo</span>
+    <button class="pill zone-only" id="backBtn">‹ Vista aérea</button>
+    <button class="pill icon zone-only" id="prevBtn" aria-label="Zona anterior">←</button>
+    <button class="pill icon zone-only" id="nextBtn" aria-label="Zona siguiente">→</button>`;
+  $('#backBtn').addEventListener('click',()=>goOverview());
+  $('#prevBtn').addEventListener('click',()=>step(-1));
+  $('#nextBtn').addEventListener('click',()=>step(1));
+  tourBtn.addEventListener('click',()=>tour?stopTour():runTour());
+  setTourBtn();
+}
+function updateHud(){
+  document.body.classList.toggle('zone',mode==='zone');
+  document.body.classList.toggle('aerial',mode==='aerial');
+  bottombar.querySelectorAll('.chip').forEach(c=>c.classList.toggle('active',c.dataset.z===currentZone));
+  bottombar.querySelector('.chip.active')?.scrollIntoView({inline:'center',block:'nearest',behavior:'smooth'});
+  zpanel.classList.remove('on');
+  if(mode!=='zone') return;
+  const z=ZBY[currentZone], i=ZONES.indexOf(z), as=AZ(z.id);
+  const alerts=as.filter(a=>SEV[a.estado]>0).length;
+  zpanel.innerHTML=`<div class="kick">Zona ${String(i+1).padStart(2,'0')} / ${String(ZONES.length).padStart(2,'0')}</div>
+    <h2>${z.nombre}</h2><p class="desc">${z.desc} · ${as.length} equipos${alerts?` · ${alerts} con novedad`:''}</p>
+    <ul>${as.map(a=>`<li><button data-a="${a.id}"><i class="dot" style="background:${ESTADOS[a.estado].c}"></i><span>${a.nombre}</span><em style="color:${ESTADOS[a.estado].c}">${a.estado}</em></button></li>`).join('')}</ul>`;
+  zpanel.querySelectorAll('li button').forEach(b=>{
+    const a=ASSETS.find(x=>x.id===b.dataset.a);
+    b.addEventListener('click',()=>openAsset(a));
+    b.addEventListener('mouseenter',()=>F().pins.querySelector(`[data-a="${a.id}"]`)?.classList.add('hl'));
+    b.addEventListener('mouseleave',()=>F().pins.querySelector(`[data-a="${a.id}"]`)?.classList.remove('hl'));
+  });
+}
+
+/* ============ Ficha de equipo ============ */
+function openAsset(a){
+  if(busy) return;
+  selected=a;
+  F().pins.querySelectorAll('.hs').forEach(h=>h.classList.toggle('sel',h.dataset.a===a.id));
+  focusAsset(a);
+  const c=ESTADOS[a.estado].c;
+  const histHtml=a.hist.slice(0,2).map(h=>`<div><time>${h[0]}</time><span>${h[1]}</span></div>`).join('');
+  card.innerHTML=`
+    <button class="close" aria-label="Cerrar ficha">✕</button>
+    <div class="head">
+      <div class="glyph" style="background:${c}">${GLYPH[a.id]||'EQ'}</div>
+      <div class="tt"><h3>${a.nombre}</h3><p class="amb">${ZBY[a.st].nombre} · ${a.tipo}</p></div>
+      <span class="badge" style="background:${c}22;color:${c}"><i class="dot" style="background:${c}"></i>${a.estado}</span>
+    </div>
+    <div class="health"><div class="lbl"><span>Índice de salud</span><span>${a.salud}%</span></div>
+      <div class="bar"><i style="width:${a.salud}%;background:${a.salud>75?'var(--ok)':a.salud>45?'var(--warn)':'var(--bad)'}"></i></div></div>
+    <div class="grid">
+      <div class="cell"><span>Equipo / modelo</span><b>${a.marca}</b></div>
+      <div class="cell"><span>TAG</span><b>${a.serie}</b></div>
+      <div class="cell"><span>Criticidad</span><b>${a.criticidad}</b></div>
+      <div class="cell"><span>Instalación</span><b>${a.instalado}</b></div>
+      <div class="cell"><span>Última inspección</span><b>${a.ultInsp}</b></div>
+      <div class="cell hot"><span>Próximo mant.</span><b>${a.proxMant}</b></div>
+    </div>
+    ${a.nota?`<div class="note">${a.nota}</div>`:''}
+    <div class="hist">${histHtml}</div>`;
+  card.classList.add('on'); document.body.classList.add('carded');
+  card.querySelector('.close').addEventListener('click',()=>closeCard());
+}
+/* Acercamiento suave al equipo, sin dejar ver bordes de la imagen */
+function focusAsset(a,instant){
+  const l=F(), fl=parseFloat(l.frame.style.left), ft=parseFloat(l.frame.style.top);
+  const narrow=vw<760, s=narrow?1.35:1.45;
+  const p=[fl+a.hx/100*fw, ft+a.hy/100*fh];
+  const T=[narrow?vw*.5:vw*.42, narrow?vh*.3:vh*.44];
+  const tx=clamp(T[0]-p[0]*s, vw-(fl+fw)*s, -fl*s);
+  const ty=clamp(T[1]-p[1]*s, vh-(ft+fh)*s, -ft*s);
+  l.foc.style.transition=(RM||instant)?'none':`transform 1.15s ${EASE}`;
+  l.foc.style.transform=`translate(${tx}px,${ty}px) scale(${s})`;
+  l.pins.style.setProperty('--k',(1/s).toFixed(3));
+}
+function closeCard(){
+  if(!selected) return;
+  selected=null;
+  card.classList.remove('on'); document.body.classList.remove('carded');
+  const l=F();
+  l.foc.style.transition=RM?'none':`transform 1s ${EASE}`; l.foc.style.transform='';
+  l.pins.style.removeProperty('--k');
+  l.pins.querySelectorAll('.hs.sel').forEach(h=>h.classList.remove('sel'));
+}
+
+/* ============ Recorrido automático ============ */
+let tour=false, tourTimer=0, wake=null;
+const sleep=ms=>new Promise(r=>{wake=r; tourTimer=setTimeout(r,ms);});
+function setTourBtn(){
+  tourBtn.classList.toggle('on',tour); tourBtn.setAttribute('aria-pressed',tour);
+  tourBtn.innerHTML=tour?'■ <span class="only-wide">Detener recorrido</span>':'▶ <span class="only-wide">Recorrido</span>';
+}
+function stopTour(){ if(!tour) return; tour=false; clearTimeout(tourTimer); wake&&wake(); setTourBtn(); }
+async function runTour(){
+  if(busy) return;
+  tour=true; setTourBtn();
+  for(const z of ZONES){
+    await goZone(z.id); if(!tour) return;
+    await sleep(1100); if(!tour) return;
+    const w=[...AZ(z.id)].sort((a,b)=>SEV[b.estado]-SEV[a.estado])[0];
+    if(SEV[w.estado]>0){
+      openAsset(w); await sleep(3800); if(!tour) return;
+      closeCard(); await sleep(900); if(!tour) return;
+    } else { await sleep(2600); if(!tour) return; }
+  }
+  await goOverview();
+  tour=false; setTourBtn();
+}
+addEventListener('pointerdown',e=>{ if(tour&&!e.target.closest('#tourBtn')) stopTour(); },true);
+
+/* ============ Interacción: arrastre, paralaje, teclado ============ */
+let drag=null, dragged=false;
+stage.addEventListener('pointerdown',e=>{
+  if(busy) return;
+  drag={x:e.clientX,y:e.clientY,px:F().px,py:F().py}; dragged=false;
+});
+addEventListener('pointermove',e=>{
+  if(drag){
+    const dx=e.clientX-drag.x, dy=e.clientY-drag.y;
+    if(!dragged&&Math.hypot(dx,dy)>6) dragged=true;
+    if(dragged){ const l=F(); l.px=drag.px+dx; l.py=drag.py+dy; place(l); }
+    return;
+  }
+  if(e.pointerType!=='mouse'||RM||busy) return;
+  const dx=e.clientX/vw-.5, dy=e.clientY/vh-.5;
+  F().par.style.transform=`translate(${(-dx*18).toFixed(1)}px,${(-dy*12).toFixed(1)}px)`;
+});
+addEventListener('pointerup',()=>{ drag=null; });
+addEventListener('pointercancel',()=>{ drag=null; });
+stage.addEventListener('click',e=>{ if(dragged){ e.stopPropagation(); e.preventDefault(); dragged=false; } },true);
+addEventListener('keydown',e=>{
+  if(e.key!=='Tab') stopTour();
+  if(mode==='zone'&&e.key==='ArrowRight') step(1);
+  if(mode==='zone'&&e.key==='ArrowLeft') step(-1);
+  if(e.key==='Escape'){ if(selected) closeCard(); else if(mode==='zone') goOverview(); }
+});
+addEventListener('resize',layout);
+
+/* ============ Arranque: intro tipo drone ============ */
+const preload=[];
+async function boot(){
+  busy=true;
+  buildStatic(); layout();
+  setView(L[0],{type:'aerial'}); panTo(L[0],57,50); L[0].el.classList.add('front'); L[0].el.style.opacity='1'; L[0].el.style.zIndex=1;
+  await L[0].img.decode().catch(()=>{});
+  ZONES.forEach(z=>{ const i=new Image(); i.src=imgOf({type:'zone',id:z.id}); preload.push(i); });
+  $('#intro').classList.add('gone');
+  if(!RM){
+    L[0].el.classList.add('busy'); document.body.classList.add('cine');
+    await play(L[0].el,[{transform:'scale(1.55) translateY(5%)',filter:'blur(14px)',opacity:0},{opacity:1,offset:.3},
+      {transform:'scale(1) translateY(0)',filter:'blur(0px)',opacity:1}],3200,'cubic-bezier(.2,.65,.1,1)');
+    L[0].el.getAnimations().forEach(x=>x.cancel());
+    L[0].el.classList.remove('busy'); document.body.classList.remove('cine');
+  }
+  document.body.classList.add('ready');
+  busy=false;
+}
+boot();
+</script>
+</body>
+</html>

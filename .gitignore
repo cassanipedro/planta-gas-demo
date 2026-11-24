@@ -1,0 +1,4 @@
+# Originales PNG de las imágenes generadas (pesados; las versiones JPG son las que usa la app)
+img/**/src/
+.DS_Store
+Thumbs.db
